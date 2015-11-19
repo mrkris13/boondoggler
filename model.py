@@ -10,7 +10,6 @@ import rospy
 
 # Physical constants
 grav_acc = 9.80665 #[m/s]
-mass = 1.0 # [kg]
 
 # Vehicle state variable enumeration
 VAR_COUNT     = 14
@@ -187,14 +186,40 @@ def process_model(x, u, dt, disturb_mode):
 
 ########################### Observation Models
 
-def observation_acc(x):
+def observation_acc(x, disturb_mode):
 # Inputs:
-#   x:    Vehicle state vector 
+#   x:    Vehicle state vector
+#   disturb_mode:  Flag to use disturbance mode
 # Outputs:
 #   h:    Prediction of measurement given current state
 #   Hx:   Jacobian of measurement wrt robot state
 #   Q:    Measurement covariance matrix
-  return (h,Hx,Q)
+    vel_u = x[VAR_VEL_U]
+    vel_v = x[VAR_VEL_V]
+    vel_w = x[VAR_VEL_W]
+    thrust = x[VAR_SP_THRUST]
+    drag_coeff = x[VAR_DRAG_CO]
+
+    h = np.array([ \
+        -drag_coeff*vel_u,  \
+        -drag_coeff*vel_v,  \
+        -thrust,            \
+        ])
+
+    Hx = np.zeros([3, VAR_COUNT])
+
+    Hx[0, VAR_VEL_U] = -drag_coeff
+    Hx[0, VAR_DRAG_CO] = -vel_u
+    Hx[1, VAR_VEL_V] = -drag_coeff
+    Hx[1, VAR_DRAG_CO] = -vel_v
+    Hx[2, VAR_SP_THRUST] = -1.0
+
+    if disturb_mode == DISTURB_NOMINAL:
+      Q = np.diag([0.25**2, 0.25**2, 0.25**2])
+    else:  # DISTURB_ACTIVE
+      Q = np.diag([0.8**2, 0.8**2, 0.8**2])
+
+    return (h,Hx,Q)
 
 ################### Transform Utility functions
 
@@ -339,16 +364,14 @@ def enforce_symmetry(A):
   return A
 
 def print_state(x):
-  print 'Roll = {} [rad]'.format(x[UAV_ROLL])
-  print 'Pitch = {} [rad]'.format(x[UAV_PITCH])
-  print 'Yaw = {} [rad]'.format(x[UAV_YAW])
-  print 'NED Position = ({}, {}, {}) [m]'.format(x[UAV_POS_X], x[UAV_POS_Y], x[UAV_POS_Z])
-  print 'Body velocities = ({}, {}, {}) [m/s]'.format(x[UAV_VEL_U], x[UAV_VEL_V], x[UAV_VEL_W])
-  print 'Gyro biases = ({}, {}, {}) [rad/s]'.format(x[UAV_GBIAS_P], x[UAV_GBIAS_R], x[UAV_GBIAS_Q])
-  print 'Mag reference vector = ({}, {}, {}) [Gauss].'.format(x[UAV_MREF_X], x[UAV_MREF_Y], x[UAV_MREF_Z])
-  print 'Drag coefficient = {}'.format(x[UAV_DRAG_CO])
-  print 'Thrust = {} [N]'.format(x[UAV_THRUST])
-  print 'OptFlow Scale Factor = {}'.format(x[UAV_OF_FL])
+  print 'Roll = {} [rad]'.format(x[VAR_ROLL])
+  print 'Pitch = {} [rad]'.format(x[VAR_PITCH])
+  print 'Yaw = {} [rad]'.format(x[VAR_YAW])
+  print 'NED Position = ({}, {}, {}) [m]'.format(x[VAR_POS_X], x[VAR_POS_Y], x[VAR_POS_Z])
+  print 'Body velocities = ({}, {}, {}) [m/s]'.format(x[VAR_VEL_U], x[VAR_VEL_V], x[VAR_VEL_W])
+  print 'Gyro biases = ({}, {}, {}) [rad/s]'.format(x[VAR_GBIAS_P], x[VAR_GBIAS_R], x[VAR_GBIAS_Q])
+  print 'Drag coefficient = {}'.format(x[VAR_DRAG_CO])
+  print 'Thrust = {} [N]'.format(x[VAR_THRUST])
 
   return
   
