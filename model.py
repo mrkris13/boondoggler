@@ -34,7 +34,7 @@ init_mu[VAR_POS_Z]      = -0.05
 init_mu[VAR_GBIAS_P]    =  0
 init_mu[VAR_GBIAS_R]    =  0
 init_mu[VAR_GBIAS_Q]    =  0
-init_mu[VAR_SP_THRUST]     = grav_acc
+init_mu[VAR_SP_THRUST]  = grav_acc
 init_mu[VAR_OF_FL]      = 1.0
 init_mu[VAR_DRAG_CO]    = 1.0
 
@@ -45,6 +45,9 @@ init_Sigmas[VAR_SP_THRUST]          = 0.5
 init_Sigmas[VAR_POS_X:VAR_POS_Z+1]  = 1e-3*np.ones(3)  # we are pretty certain because we define initial position as origin
 init_Sigmas[VAR_GBIAS_P:VAR_GBIAS_R+1] = 1e-2*np.ones(3)
 init_Sigmas[VAR_DRAG_CO]            = 2.0
+init_Sigmas = diag(init_Sigmas)
+
+init_u = np.zeros(3)
 
 # Disturbance modes
 DISTURB_NOMINAL = 0   # no disturbance detected
