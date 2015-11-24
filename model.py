@@ -378,3 +378,39 @@ def print_state(x):
 
   return
   
+
+def constrain_float(x, min_val, max_val, verbose):
+  if x < min_val:
+    if verbose:
+      print 'constrained {} to min value {}'.format(x, min_val)
+    return min_val
+  elif x > max_val:
+    if verbose:
+      print 'constrained {} to max value {}'.format(x, max_val)
+    return max_val
+  else:
+    return x
+
+def enforce_bounds(x, Sigma):
+# Inputs:
+#       x:      State vector
+#       Sigma:  Covariance matrix
+# Outputs:
+#       x: Constrained state vector
+#       Sigma: Constrained covariance matrix
+    
+    ## constrain mean
+    # Wrap yaw from [0,2pi]
+    d = math.floor(x[UAV_YAW]/(2*math.pi))
+    x[UAV_YAW] -= d*2*math.pi
+
+    # x[UAV_POS_Z]    = constrain_float(x[UAV_POS_Z], -np.inf, 0.0, False) # assume UAV can't penetrate floor (NED)
+    # x[UAV_DRAG_CO]  = constrain_float(x[UAV_DRAG_CO], 0.0, np.inf, False)
+
+    # Check if roll and pitch are reasonable
+    if abs(x[UAV_ROLL]) > 0.7071:
+        rospy.logwarn("Excessive roll detected.")
+    if abs(x[UAV_PITCH]) > 0.7071:
+        rospy.logwarn("Excessive pitch detected.")
+
+    return (x, Sigma)
