@@ -90,9 +90,6 @@ class EKF:
     u = np.array([imu.angular_velocity.x, -imu.angular_velocity.y, -imu.angular_velocity.z])
     new_prop_time = ts
 
-    # Store current state in our history buffer
-    self.storeState(self.prop_time, self.x, u)
-
     # Now calculate dt and propogate
     dt = (new_prop_time - self.prop_time).to_sec()
     if dt > 0.2:
@@ -100,8 +97,13 @@ class EKF:
     (x_p, Sigma_p) = self.propogate(self.x, self.Sigma, u, dt, self.disturb_mode)
 
     self.prop_time = ts
-    (self.mu, self.Sigma) = model.enforce_bounds(mu_p, Sigma_p)
+    (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
     model.print_state(self.x)
+
+    self.u = u
+  
+  else:
+    rospy.logwarn('IMU message recieved from the past.')
 
   # Now do correction based on accelerometer
   # convert from ENU->NED
