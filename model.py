@@ -72,7 +72,7 @@ def process_model(x, u, dt, disturb_mode):
     vel_w = x[VAR_VEL_W]
     thrust = x[VAR_SP_THRUST]
     drag_coeff  = x[VAR_DRAG_CO]
-    gyro_biases = x[VAR_GBIAS_P:UAV_GBIAS_P+3]
+    gyro_biases = x[VAR_GBIAS_P:VAR_GBIAS_P+3]
 
     body_vels = np.array([vel_u, vel_v, vel_w])
 
@@ -153,13 +153,13 @@ def process_model(x, u, dt, disturb_mode):
     dFx[VAR_POS_X:VAR_POS_X+3, VAR_VEL_W]  = Rt.dot(np.array([0, 0, 1]))
 
     # integration
-    Fx = np.eye(VAR_VAR_COUNT) + dt*dFx
+    Fx = np.eye(VAR_COUNT) + dt*dFx
     Fu = dt*dFu
 
     ## Measurement and process noise matrices -- TUNABLE
     M = np.diag([0.015**2, 0.015**2, 0.015**2]) * dt**2
     
-    dR = np.zeros((VAR_VAR_COUNT, VAR_VAR_COUNT))
+    dR = np.zeros((VAR_COUNT, VAR_COUNT))
     dR[VAR_ROLL, VAR_ROLL]   = 0.25**2
     dR[VAR_PITCH, VAR_PITCH] = 0.25**2
     dR[VAR_YAW, VAR_YAW]     = 0.25**2
@@ -171,7 +171,6 @@ def process_model(x, u, dt, disturb_mode):
     dR[VAR_POS_Y, VAR_POS_Y] = 0.25**2
     dR[VAR_POS_Z, VAR_POS_Z] = 0.25**2
     dR[VAR_DRAG_CO, VAR_DRAG_CO] = 1e-6**2
-    dR[VAR_OF_FL, VAR_OF_FL] = 0.000001**2
     dR[VAR_GBIAS_P, VAR_GBIAS_P] = 1e-6**2
     dR[VAR_GBIAS_Q, VAR_GBIAS_Q] = 1e-6**2
     dR[VAR_GBIAS_R, VAR_GBIAS_R] = 1e-6**2
@@ -373,7 +372,7 @@ def print_state(x):
   print 'Body velocities = ({}, {}, {}) [m/s]'.format(x[VAR_VEL_U], x[VAR_VEL_V], x[VAR_VEL_W])
   print 'Gyro biases = ({}, {}, {}) [rad/s]'.format(x[VAR_GBIAS_P], x[VAR_GBIAS_R], x[VAR_GBIAS_Q])
   print 'Drag coefficient = {}'.format(x[VAR_DRAG_CO])
-  print 'Thrust = {} [N]'.format(x[VAR_THRUST])
+  print 'Thrust = {} [N]'.format(x[VAR_SP_THRUST])
 
   return
   
@@ -400,16 +399,16 @@ def enforce_bounds(x, Sigma):
     
     ## constrain mean
     # Wrap yaw from [0,2pi]
-    d = math.floor(x[UAV_YAW]/(2*math.pi))
-    x[UAV_YAW] -= d*2*math.pi
+    d = math.floor(x[VAR_YAW]/(2*math.pi))
+    x[VAR_YAW] -= d*2*math.pi
 
     # x[UAV_POS_Z]    = constrain_float(x[UAV_POS_Z], -np.inf, 0.0, False) # assume UAV can't penetrate floor (NED)
     # x[UAV_DRAG_CO]  = constrain_float(x[UAV_DRAG_CO], 0.0, np.inf, False)
 
     # Check if roll and pitch are reasonable
-    if abs(x[UAV_ROLL]) > 0.7071:
+    if abs(x[VAR_ROLL]) > 0.7071:
         rospy.logwarn("Excessive roll detected.")
-    if abs(x[UAV_PITCH]) > 0.7071:
+    if abs(x[VAR_PITCH]) > 0.7071:
         rospy.logwarn("Excessive pitch detected.")
 
     return (x, Sigma)

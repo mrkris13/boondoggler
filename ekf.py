@@ -117,6 +117,110 @@ class EKF:
         
     return
 
+  # Propogation
+  def propogate(self, mu, Sigma, u, dt, disturb_mode):
+    # Inputs:
+    #       mu:     Full state mean vector
+    #       Sigma:  State covariance
+    #       u:      Control signal
+    #       dt:     Time elapsed since last propagation
+    #       disturb_mode:  Disturbed status of vehicle
+    # Outputs:
+    #       mu_p:    Predicted state vector after dt
+    #       Sigma_p: Predicted covariance after dt
+
+    n = mu.size
+
+    # propogate vehicle state 
+    (f, Fx, Fu, M, R) = model.process_model(mu, u, dt, disturb_mode)
+
+    # calculate predicted covariance
+    Sigma_p = Fx.dot(Sigma).dot(Fx.transpose()) + Fu.dot(M).dot(Fu.transpose()) + R
+
+    return (f, Sigma_p)
+
+
+  # Update
+  def update(self, mu, Sigma, z, z_pred, Hx, Q):
+    # Inputs:
+    #       mu:     Full state mean vector  
+    #       Sigma:  State covariance 
+    #       z:      Observation vector  
+    #       z_pred: Predicted observation                   !! Must be propogated to time of observation
+    #       Hx:     Observation model Jacobian wrt state    !! Must be propogated to time of observation
+    #       Q:      Measurement noise
+    # Outputs:
+    #       mu_c:    Corrected state vector
+    #       Sigma_c: Corrected covariance
+
+    # verify input dimensions        
+    n = mu.size
+    m = z.size
+
+    if mu.shape != (n,):
+      raise Exception('Argument mu has incorrect dimension.')
+    if Sigma.shape != (n, n):
+      raise Exception('Argument Sigma has incorrect dimensions.')
+    if False in np.isfinite(Sigma):
+      raise Exception('Argument Sigma has non-finite elements.')
+    if False in np.isfinite(Hx):
+      raise Exception('Argument Hx has non-finite elements.')
+
+    if m == 1:
+      if z.shape != ():
+        raise Exception('Argument z has incorrect dimension.')
+      if z_pred.shape != ():
+        raise Exception('Argument z_pred has incorrect dimension.')
+      if Hx.shape != (n,):
+        raise Exception('Argument Hx has incorrect dimension.')
+      if Q.shape != ():
+        raise Exception('Arugment Q has incorrect dimension.')
+      if not np.isfinite(z_pred):
+        raise Exception('Argument z_pred has non-finite elements.')
+      if not np.isfinite(Q):
+        raise Exception('Argument Q has non-finite elements.')
+
+    else:
+      if z.shape != (m,):
+        raise Exception('Argument z has incorrect dimension.')
+      if z_pred.shape != (m,):
+        raise Exception('Argument z_pred has incorrect dimension.')
+      if Hx.shape != (m, n):
+        raise Exception('Argument Hx has incorrect dimension.')
+      if Q.shape != (m, m):
+        raise Exception('Arugment Q has incorrect dimension.')
+      if False in np.isfinite(z_pred):
+        raise Exception('Argument z_pred has non-finite elements.')
+      if False in np.isfinite(Q):
+        raise Exception('Argument Q has non-finite elements.')
+
+    # calculate K
+    A = Hx.dot(Sigma).dot(Hx.T) + Q
+    if A.shape == ():
+      if A == 0.0:
+        rospy.logerr('EKFUpdate: Division by 0 detected.')
+        return (mu, Sigma)
+      try:
+        A_inv = 1.0/A;
+      except LinAlgError as e:
+        print 'EKFUpdate: {}'.format(e.strerror)
+        print A
+        return (mu, Sigma)
+    else:
+      A_inv = linalg.inv(A)
+
+    K = Sigma.dot(Hx.T).dot(A_inv) # K is nxm
+
+    # update mean
+    mu_c = mu + K.dot(z - z_pred)
+
+    # update covariance
+    n = mu.size
+    I = np.eye(n)
+    Sigma_c = (I - K.dot(Hx)).dot(Sigma)
+
+    return (mu_c, Sigma_c)
+
 
 rospy.init_node('boondoggler')
 ekf = EKF()
