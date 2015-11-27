@@ -44,7 +44,7 @@ init_Sigmas[VAR_SP_THRUST]          = 0.5
 init_Sigmas[VAR_POS_X:VAR_POS_Z+1]  = 1e-3*np.ones(3)  # we are pretty certain because we define initial position as origin
 init_Sigmas[VAR_GBIAS_P:VAR_GBIAS_R+1] = 1e-2*np.ones(3)
 init_Sigmas[VAR_DRAG_CO]            = 2.0
-init_Sigmas = np.diag(init_Sigmas)
+init_Sigma = np.diag(init_Sigmas)
 
 init_u = np.zeros(3)
 

@@ -116,3 +116,10 @@ class EKF:
     model.print_state(self.x)
         
     return
+
+
+rospy.init_node('boondoggler')
+ekf = EKF()
+ekf.subscribe()
+
+rospy.spin()
