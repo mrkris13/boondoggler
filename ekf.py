@@ -20,7 +20,6 @@ import math
 
 import rospy
 
-import params
 import model
 
 # For ROS Messages
@@ -82,38 +81,38 @@ class EKF:
   # Message Handlers
   def update_IMU(self, imu):
 
-  ts = imu.header.stamp
+    ts = imu.header.stamp
 
-  if ts > self.prop_time:
-    # use UNCORRECTED gyro rates as control signal
+    if ts > self.prop_time:
+      # use UNCORRECTED gyro rates as control signal
+      # convert from ENU->NED
+      u = np.array([imu.angular_velocity.x, -imu.angular_velocity.y, -imu.angular_velocity.z])
+      new_prop_time = ts
+
+      # Now calculate dt and propogate
+      dt = (new_prop_time - self.prop_time).to_sec()
+      if dt > 0.2:
+          rospy.logwarn('Propogating filter by larger than expected dt.')
+      (x_p, Sigma_p) = self.propogate(self.x, self.Sigma, u, dt, self.disturb_mode)
+
+      self.prop_time = ts
+      (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
+      model.print_state(self.x)
+
+      self.u = u
+    
+    else:
+      rospy.logwarn('IMU message recieved from the past.')
+
+    # Now do correction based on accelerometer
     # convert from ENU->NED
-    u = np.array([imu.angular_velocity.x, -imu.angular_velocity.y, -imu.angular_velocity.z])
-    new_prop_time = ts
+    z = np.array([imu.linear_acceleration.x, -imu.linear_acceleration.y, -imu.linear_acceleration.z])        
 
-    # Now calculate dt and propogate
-    dt = (new_prop_time - self.prop_time).to_sec()
-    if dt > 0.2:
-        rospy.logwarn('Propogating filter by larger than expected dt.')
-    (x_p, Sigma_p) = self.propogate(self.x, self.Sigma, u, dt, self.disturb_mode)
+    (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
+    (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
+    (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
 
-    self.prop_time = ts
-    (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
+    # rospy.loginfo('Completed IMU update.')
     model.print_state(self.x)
-
-    self.u = u
-  
-  else:
-    rospy.logwarn('IMU message recieved from the past.')
-
-  # Now do correction based on accelerometer
-  # convert from ENU->NED
-  z = np.array([imu.linear_acceleration.x, -imu.linear_acceleration.y, -imu.linear_acceleration.z])        
-
-  (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
-  (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
-  (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
-
-  # rospy.loginfo('Completed IMU update.')
-  model.print_state(self.x)
-      
-  return
+        
+    return
