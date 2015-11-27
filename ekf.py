@@ -26,6 +26,8 @@ import model
 from sensor_msgs.msg import Imu
 from sensor_msgs.msg import Range
 
+from boondoggler.msg import EstUavState
+
 class EKF:
 
   x     = None
@@ -44,6 +46,8 @@ class EKF:
     self.u = model.init_u
 
     self.disturb_mode = model.DISTURB_NOMINAL
+
+    self.pub_uav = rospy.Publisher('boondoggler/uav_state', EstUavState, queue_size=1)
 
     rospy.loginfo('EKF: initialized state.')
     return
@@ -220,6 +224,22 @@ class EKF:
     Sigma_c = (I - K.dot(Hx)).dot(Sigma)
 
     return (mu_c, Sigma_c)
+
+  def publish(self):
+    if self.prop_time == None:
+      # filter not initialized
+      # Don't publish
+      return
+
+    uav = EstUavState()
+    uav.state = self.x.tolist()
+    uav.covariance = self.Sigma.tolist()
+
+    uav.header.stamp = self.prop_time
+    uav.header.frame_id = 'world'
+
+    self.pub_uav.publish(uav)
+    return
 
 
 rospy.init_node('boondoggler')
