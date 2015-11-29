@@ -11,6 +11,8 @@ function [ ] = plotStateEstimatesFromBag( filename, varargin )
 %     Boondoggler
 %     Vicon
 
+close all;
+
 startOffset = 0;
 endOffset = -1;
 if nargin > 1
@@ -25,9 +27,11 @@ sources = cell(2,1);
 
 sources{1}.name = 'Boondoggler';
 sources{1}.topic_pose = '/boondoggler/pose';
+sources{1}.topic_vel = '/boondoggler/vel';
 
 sources{2}.name = 'Vicon';
 sources{2}.topic_pose = '/f450/pose';
+sources{2}.topic_vel = '/f450/vel';
 
 %% Populate data from bag
 S = size(sources,1);
@@ -66,6 +70,10 @@ for s = 1:S
   sources{s}.ts = bsxfun(@minus, t_series.Time, bag.StartTime);
   sources{s}.pos = bsxfun(@minus, t_series.Data(:,1:3), first_pos);
   sources{s}.q = t_series.Data(:,4:7);
+  
+  % convert quaternions to euler angles
+  [roll,pitch,yaw] = quat_to_euler(sources{s}.q);
+  sources{s}.euler = [roll,pitch,yaw];
 end
 
 clear first_pose_msgs;
@@ -86,13 +94,22 @@ xlabel('X');
 
 figure;
 subplot(2,2,1);
-title('qw');
-subplot(2,2,2);
 title('qx');
-subplot(2,2,3);
+subplot(2,2,2);
 title('qy');
-subplot(2,2,4);
+subplot(2,2,3);
 title('qz');
+subplot(2,2,4);
+title('qw');
+
+figure;
+subplot(1,2,1);
+title('roll');
+subplot(1,2,2);
+title('pitch');
+
+figure;
+title('yaw');
 
 for s = 1:S
   if sources{s}.empty
@@ -120,6 +137,19 @@ for s = 1:S
   subplot(2,2,4);
   hold all;
   plot(sources{s}.ts, sources{s}.q(:,4));
+  
+  figure(4);
+  subplot(1,2,1);
+  hold all;
+  plot(sources{s}.ts, sources{s}.euler(:,1));
+  subplot(1,2,2);
+  hold all;
+  plot(sources{s}.ts, sources{s}.euler(:,2));
+  
+  figure(5);
+  hold all;
+  polar(sources{s}.euler(:,3), sources{s}.ts);
+  
 end
 
 names = {};
@@ -133,6 +163,10 @@ legend(names);
 figure(2);
 legend(names);
 figure(3);
+legend(names);
+figure(4);
+legend(names);
+figure(5);
 legend(names);
 
 end
