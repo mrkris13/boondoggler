@@ -44,7 +44,7 @@ class EKF:
 
   disturb_mode  = None
 
-  def __init__(self):
+  def __init__(self): 
     rospy.loginfo('EKF: initializing EKF object...')
 
     self.x = model.init_mu
@@ -55,6 +55,8 @@ class EKF:
 
     self.pub_pose = rospy.Publisher('boondoggler/pose', PoseStamped, queue_size=1)
     self.pub_vel = rospy.Publisher('boondoggler/vel', Vector3Stamped, queue_size=1)
+    self.pub_uav_state = rospy.Publisher('boondoggler/uav_state', EstUavState, queue_size=1)
+    
     self.seq = 0
 
     rospy.loginfo('EKF: initialized state.')
@@ -63,7 +65,7 @@ class EKF:
   def subscribe(self):
     rospy.loginfo('EKF: starting subscribers...')
     
-    self.sub_imu = rospy.Subscriber('/mavros/imu/data_raw', Imu, self.msgHandler)
+    self.sub_imu = rospy.Subscriber('/mavros/imu/data_raw', Imu, self.msgHandler, queue_size=1)
     rospy.loginfo('     Imu...')
 
     return
@@ -97,8 +99,7 @@ class EKF:
 
     if ts > self.prop_time:
       # use UNCORRECTED gyro rates as control signal
-      # convert from ENU->NED
-      u = np.array([imu.angular_velocity.x, -imu.angular_velocity.y, -imu.angular_velocity.z])
+      u = np.array([imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z])
       new_prop_time = ts
 
       # Now calculate dt and propogate
@@ -109,7 +110,7 @@ class EKF:
 
       self.prop_time = ts
       (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
-      model.print_state(self.x)
+      # model.print_state(self.x)
 
       self.u = u
     
@@ -117,15 +118,14 @@ class EKF:
       rospy.logwarn('IMU message recieved from the past.')
 
     # Now do correction based on accelerometer
-    # convert from ENU->NED
-    z = np.array([imu.linear_acceleration.x, -imu.linear_acceleration.y, -imu.linear_acceleration.z])        
+    z = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])        
 
     (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
     (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
     (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
 
     # rospy.loginfo('Completed IMU update.')
-    model.print_state(self.x)
+    # model.print_state(self.x)
         
     return
 
@@ -251,10 +251,9 @@ class EKF:
     q = quaternion_from_euler(roll, pitch, yaw)
     pose.pose.orientation = Quaternion(*q)
 
-    # convert position from ned->enu
-    pose.pose.position.x =  self.x[model.VAR_POS_Y]
-    pose.pose.position.y =  self.x[model.VAR_POS_X]
-    pose.pose.position.z = -self.x[model.VAR_POS_Z]
+    pose.pose.position.x =  self.x[model.VAR_POS_X]
+    pose.pose.position.y =  self.x[model.VAR_POS_Y]
+    pose.pose.position.z =  self.x[model.VAR_POS_Z]
 
     self.pub_pose.publish(pose)
 
@@ -263,12 +262,13 @@ class EKF:
     vels.header.frame_id = '/body'
     vels.header.seq = self.seq
 
-    # again convert from ned->enu
-    vels.vector.x =  self.x[model.VAR_VEL_V]
-    vels.vector.y =  self.x[model.VAR_VEL_U]
-    vels.vector.z = -self.x[model.VAR_VEL_W]
+    vels.vector.x =  self.x[model.VAR_VEL_U]
+    vels.vector.y =  self.x[model.VAR_VEL_V]
+    vels.vector.z =  self.x[model.VAR_VEL_W]
 
     self.pub_vel.publish(vels)
+
+
 
     self.seq += 1
     return

@@ -30,7 +30,7 @@ VAR_DRAG_CO   = 13    # drag coefficient
 
 # Initial state estimate
 init_mu = np.zeros(VAR_COUNT)
-init_mu[VAR_POS_Z]      = -0.05
+init_mu[VAR_POS_Z]      = 0.05
 init_mu[VAR_GBIAS_P]    =  0
 init_mu[VAR_GBIAS_R]    =  0
 init_mu[VAR_GBIAS_Q]    =  0
@@ -80,7 +80,7 @@ def process_model(x, u, dt, disturb_mode):
     corr_gyro = u - gyro_biases
 
     # gravity vector
-    grav_vect = np.array([0, 0, grav_acc])
+    grav_vect = np.array([0, 0, -grav_acc])
 
     ## Calculate mean f
     # calculate inertial-to-body coordinate frame
@@ -93,7 +93,7 @@ def process_model(x, u, dt, disturb_mode):
     # calculate state rate vector
     df = np.zeros(VAR_COUNT)
     df[VAR_ROLL:VAR_ROLL+3]     = L_gyro.dot(corr_gyro)
-    df[VAR_VEL_U:VAR_VEL_U+3]   = R.dot(grav_vect) + np.array([-drag_coeff*vel_u, -drag_coeff*vel_v, -thrust])
+    df[VAR_VEL_U:VAR_VEL_U+3]   = R.dot(grav_vect) + np.array([-drag_coeff*vel_u, -drag_coeff*vel_v, thrust])
     df[VAR_POS_X:VAR_POS_X+3]   = Rt.dot(body_vels)
     
     # integrate state rate vector to get new mean
@@ -142,7 +142,7 @@ def process_model(x, u, dt, disturb_mode):
     dFx[VAR_VEL_U, VAR_DRAG_CO]  = -vel_u
     dFx[VAR_VEL_V, VAR_VEL_V]    = -drag_coeff
     dFx[VAR_VEL_V, VAR_DRAG_CO]  = -vel_v
-    dFx[VAR_VEL_W, VAR_SP_THRUST]   = -1.0
+    dFx[VAR_VEL_W, VAR_SP_THRUST]   = 1.0
 
     # inertial-frame position derivatives
     dFx[VAR_POS_X:VAR_POS_X+3, VAR_ROLL]   = dRt_dRoll.dot(body_vels)
@@ -204,7 +204,7 @@ def observation_acc(x, disturb_mode):
     h = np.array([ \
         -drag_coeff*vel_u,  \
         -drag_coeff*vel_v,  \
-        -thrust,            \
+        thrust,            \
         ])
 
     Hx = np.zeros([3, VAR_COUNT])
@@ -213,7 +213,7 @@ def observation_acc(x, disturb_mode):
     Hx[0, VAR_DRAG_CO] = -vel_u
     Hx[1, VAR_VEL_V] = -drag_coeff
     Hx[1, VAR_DRAG_CO] = -vel_v
-    Hx[2, VAR_SP_THRUST] = -1.0
+    Hx[2, VAR_SP_THRUST] = 1.0
 
     if disturb_mode == DISTURB_NOMINAL:
       Q = np.diag([0.25**2, 0.25**2, 0.25**2])
@@ -368,7 +368,7 @@ def print_state(x):
   print 'Roll = {} [rad]'.format(x[VAR_ROLL])
   print 'Pitch = {} [rad]'.format(x[VAR_PITCH])
   print 'Yaw = {} [rad]'.format(x[VAR_YAW])
-  print 'NED Position = ({}, {}, {}) [m]'.format(x[VAR_POS_X], x[VAR_POS_Y], x[VAR_POS_Z])
+  print 'ENU Position = ({}, {}, {}) [m]'.format(x[VAR_POS_X], x[VAR_POS_Y], x[VAR_POS_Z])
   print 'Body velocities = ({}, {}, {}) [m/s]'.format(x[VAR_VEL_U], x[VAR_VEL_V], x[VAR_VEL_W])
   print 'Gyro biases = ({}, {}, {}) [rad/s]'.format(x[VAR_GBIAS_P], x[VAR_GBIAS_R], x[VAR_GBIAS_Q])
   print 'Drag coefficient = {}'.format(x[VAR_DRAG_CO])
