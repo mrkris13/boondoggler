@@ -195,33 +195,53 @@ def observation_acc(x, disturb_mode):
 #   h:    Prediction of measurement given current state
 #   Hx:   Jacobian of measurement wrt robot state
 #   Q:    Measurement covariance matrix
-    vel_u = x[VAR_VEL_U]
-    vel_v = x[VAR_VEL_V]
-    vel_w = x[VAR_VEL_W]
-    thrust = x[VAR_SP_THRUST]
-    drag_coeff = x[VAR_DRAG_CO]
+  vel_u = x[VAR_VEL_U]
+  vel_v = x[VAR_VEL_V]
+  vel_w = x[VAR_VEL_W]
+  thrust = x[VAR_SP_THRUST]
+  drag_coeff = x[VAR_DRAG_CO]
 
-    h = np.array([ \
-        -drag_coeff*vel_u,  \
-        -drag_coeff*vel_v,  \
-        thrust,            \
-        ])
+  h = np.array([ \
+      -drag_coeff*vel_u,  \
+      -drag_coeff*vel_v,  \
+      thrust,            \
+      ])
 
-    Hx = np.zeros([3, VAR_COUNT])
+  Hx = np.zeros([3, VAR_COUNT])
 
-    Hx[0, VAR_VEL_U] = -drag_coeff
-    Hx[0, VAR_DRAG_CO] = -vel_u
-    Hx[1, VAR_VEL_V] = -drag_coeff
-    Hx[1, VAR_DRAG_CO] = -vel_v
-    Hx[2, VAR_SP_THRUST] = 1.0
+  Hx[0, VAR_VEL_U] = -drag_coeff
+  Hx[0, VAR_DRAG_CO] = -vel_u
+  Hx[1, VAR_VEL_V] = -drag_coeff
+  Hx[1, VAR_DRAG_CO] = -vel_v
+  Hx[2, VAR_SP_THRUST] = 1.0
 
-    if disturb_mode == DISTURB_NOMINAL:
-      Q = np.diag([0.25**2, 0.25**2, 0.25**2])
-    else:  # DISTURB_ACTIVE
-      Q = np.diag([0.8**2, 0.8**2, 0.8**2])
+  if disturb_mode == DISTURB_NOMINAL:
+    Q = np.diag([0.25**2, 0.25**2, 0.25**2])
+  else:  # DISTURB_ACTIVE
+    Q = np.diag([0.8**2, 0.8**2, 0.8**2])
 
-    return (h,Hx,Q)
+  return (h,Hx,Q)
 
+def observation_alt_lidar(x, disturb_mode):
+  # Inputs:
+  #   x:    Vehicle state vector
+  #   disturb_mode:  Flag to use disturbance mode
+  # Outputs:
+  #   h:    Prediction of measurement given current state
+  #   Hx:   Jacobian of measurement wrt robot state
+  #   Q:    Measurement covariance matrix
+  pos_z = x[VAR_POS_Z]
+
+  # assume quad is near level, measuring distance to flat ground, with sensor offset of +4cm
+  h = np.array([ pos_z - 0.04 ])
+
+  Hx = np.zeros([1, VAR_COUNT])
+  Hx[0, VAR_POS_Z] = 1;
+
+  Q = np.diag([0.05**2]);
+
+  return (h,Hx,Q)
+  
 ################### Transform Utility functions
 
 # Defines inertial-to-body transform based on input Euler angles
