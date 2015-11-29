@@ -26,6 +26,12 @@ import model
 from sensor_msgs.msg import Imu
 from sensor_msgs.msg import Range
 
+from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Vector3Stamped
+from geometry_msgs.msg import Quaternion
+
+from tf.transformations import quaternion_from_euler
+
 from boondoggler.msg import EstUavState
 
 class EKF:
@@ -47,7 +53,9 @@ class EKF:
 
     self.disturb_mode = model.DISTURB_NOMINAL
 
-    self.pub_uav = rospy.Publisher('boondoggler/uav_state', EstUavState, queue_size=1)
+    self.pub_pose = rospy.Publisher('boondoggler/pose', PoseStamped, queue_size=1)
+    self.pub_vel = rospy.Publisher('boondoggler/vel', Vector3Stamped, queue_size=1)
+    self.seq = 0
 
     rospy.loginfo('EKF: initialized state.')
     return
@@ -231,14 +239,38 @@ class EKF:
       # Don't publish
       return
 
-    uav = EstUavState()
-    uav.state = self.x.tolist()
-    uav.covariance = self.Sigma.tolist()
+    pose = PoseStamped()
+    pose.header.stamp = self.prop_time
+    pose.header.frame_id = '/world'
+    pose.header.seq = self.seq
 
-    uav.header.stamp = self.prop_time
-    uav.header.frame_id = 'world'
+    roll = self.x[model.VAR_ROLL]
+    pitch = self.x[model.VAR_PITCH]
+    yaw = self.x[model.VAR_YAW]
 
-    self.pub_uav.publish(uav)
+    q = quaternion_from_euler(roll, pitch, yaw)
+    pose.pose.orientation = Quaternion(*q)
+
+    # convert position from ned->enu
+    pose.pose.position.x =  self.x[model.VAR_POS_Y]
+    pose.pose.position.y =  self.x[model.VAR_POS_X]
+    pose.pose.position.z = -self.x[model.VAR_POS_Z]
+
+    self.pub_pose.publish(pose)
+
+    vels = Vector3Stamped()
+    vels.header.stamp = self.prop_time
+    vels.header.frame_id = '/body'
+    vels.header.seq = self.seq
+
+    # again convert from ned->enu
+    vels.vector.x =  self.x[model.VAR_VEL_V]
+    vels.vector.y =  self.x[model.VAR_VEL_U]
+    vels.vector.z = -self.x[model.VAR_VEL_W]
+
+    self.pub_vel.publish(vels)
+
+    self.seq += 1
     return
 
 
