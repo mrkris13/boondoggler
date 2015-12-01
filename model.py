@@ -30,12 +30,8 @@ VAR_DRAG_CO   = 13    # drag coefficient
 
 # Initial state estimate
 init_mu = np.zeros(VAR_COUNT)
-init_mu[VAR_POS_Z]      = 0.05
-init_mu[VAR_GBIAS_P]    =  0
-init_mu[VAR_GBIAS_R]    =  0
-init_mu[VAR_GBIAS_Q]    =  0
-init_mu[VAR_SP_THRUST]  = grav_acc
-init_mu[VAR_DRAG_CO]    = 1.0
+init_mu[VAR_SP_THRUST]  =  grav_acc
+init_mu[VAR_DRAG_CO]    =  1.0
 
 init_Sigmas = np.zeros(VAR_COUNT)
 init_Sigmas[VAR_ROLL:VAR_YAW+1]     = 1e-2*np.ones(3)
@@ -121,36 +117,30 @@ def process_model(x, u, dt, disturb_mode):
     dRt_dYaw    = dR_dYaw.T
 
     # euler angular derivatives
-    dFx[VAR_ROLL:VAR_ROLL+3, VAR_ROLL] = dL_dRoll.dot(corr_gyro)
+    dFx[VAR_ROLL:VAR_ROLL+3, VAR_ROLL]  = dL_dRoll.dot(corr_gyro)
     dFx[VAR_ROLL:VAR_ROLL+3, VAR_PITCH] = dL_dPitch.dot(corr_gyro)
-    dFx[VAR_ROLL:VAR_ROLL+3, VAR_YAW] = dL_dYaw.dot(corr_gyro)
+    dFx[VAR_ROLL:VAR_ROLL+3, VAR_YAW]   = dL_dYaw.dot(corr_gyro)
     
-    dFu[VAR_ROLL:VAR_ROLL+3, 0] = L_gyro.dot(np.array([1, 0, 0]))
-    dFu[VAR_ROLL:VAR_ROLL+3, 1] = L_gyro.dot(np.array([0, 1, 0]))
-    dFu[VAR_ROLL:VAR_ROLL+3, 2] = L_gyro.dot(np.array([0, 0, 1]))
-    
-    dFx[VAR_ROLL:VAR_ROLL+3, VAR_GBIAS_P] = L_gyro.dot(np.array([-1, 0, 0]))
-    dFx[VAR_ROLL:VAR_ROLL+3, VAR_GBIAS_Q] = L_gyro.dot(np.array([0, -1, 0]))
-    dFx[VAR_ROLL:VAR_ROLL+3, VAR_GBIAS_R] = L_gyro.dot(np.array([0, 0, -1]))
+    dFu[VAR_ROLL:VAR_ROLL+3, 0:3]                         = L_gyro
+
+    dFx[VAR_ROLL:VAR_ROLL+3, VAR_GBIAS_P:VAR_GBIAS_P+3]   = -L_gyro
 
     # body-frame translational velocity derivatives
     dFx[VAR_VEL_U:VAR_VEL_U+3, VAR_ROLL]     = dR_dRoll.dot(grav_vect)
     dFx[VAR_VEL_U:VAR_VEL_U+3, VAR_PITCH]    = dR_dPitch.dot(grav_vect)
     dFx[VAR_VEL_U:VAR_VEL_U+3, VAR_YAW]      = dR_dYaw.dot(grav_vect)
 
-    dFx[VAR_VEL_U, VAR_VEL_U]    = -drag_coeff
-    dFx[VAR_VEL_U, VAR_DRAG_CO]  = -vel_u
-    dFx[VAR_VEL_V, VAR_VEL_V]    = -drag_coeff
-    dFx[VAR_VEL_V, VAR_DRAG_CO]  = -vel_v
+    dFx[VAR_VEL_U, VAR_VEL_U]       = -drag_coeff
+    dFx[VAR_VEL_U, VAR_DRAG_CO]     = -vel_u
+    dFx[VAR_VEL_V, VAR_VEL_V]       = -drag_coeff
+    dFx[VAR_VEL_V, VAR_DRAG_CO]     = -vel_v
     dFx[VAR_VEL_W, VAR_SP_THRUST]   = 1.0
 
     # inertial-frame position derivatives
-    dFx[VAR_POS_X:VAR_POS_X+3, VAR_ROLL]   = dRt_dRoll.dot(body_vels)
-    dFx[VAR_POS_X:VAR_POS_X+3, VAR_PITCH]  = dRt_dPitch.dot(body_vels)
-    dFx[VAR_POS_X:VAR_POS_X+3, VAR_YAW]    = dRt_dYaw.dot(body_vels)
-    dFx[VAR_POS_X:VAR_POS_X+3, VAR_VEL_U]  = Rt.dot(np.array([1, 0, 0]))
-    dFx[VAR_POS_X:VAR_POS_X+3, VAR_VEL_V]  = Rt.dot(np.array([0, 1, 0]))
-    dFx[VAR_POS_X:VAR_POS_X+3, VAR_VEL_W]  = Rt.dot(np.array([0, 0, 1]))
+    dFx[VAR_POS_X:VAR_POS_X+3, VAR_ROLL]                = dRt_dRoll.dot(body_vels)
+    dFx[VAR_POS_X:VAR_POS_X+3, VAR_PITCH]               = dRt_dPitch.dot(body_vels)
+    dFx[VAR_POS_X:VAR_POS_X+3, VAR_YAW]                 = dRt_dYaw.dot(body_vels)
+    dFx[VAR_POS_X:VAR_POS_X+3, VAR_VEL_U:VAR_VEL_U+3]   = Rt
 
     # integration
     Fx = np.eye(VAR_COUNT) + dt*dFx
@@ -232,8 +222,8 @@ def observation_alt_lidar(x, disturb_mode):
   #   Q:    Measurement covariance matrix
   pos_z = x[VAR_POS_Z]
 
-  # assume quad is near level, measuring distance to flat ground, with sensor offset of +4cm
-  h = np.array([ pos_z - 0.04 ])
+  # assume quad is near level, measuring distance to flat ground
+  h = np.array([ pos_z ])
 
   Hx = np.zeros([1, VAR_COUNT])
   Hx[0, VAR_POS_Z] = 1;
@@ -241,7 +231,7 @@ def observation_alt_lidar(x, disturb_mode):
   Q = np.diag([0.05**2]);
 
   return (h,Hx,Q)
-  
+
 ################### Transform Utility functions
 
 # Defines inertial-to-body transform based on input Euler angles
