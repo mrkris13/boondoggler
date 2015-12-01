@@ -56,7 +56,7 @@ class EKF:
     self.pub_pose = rospy.Publisher('boondoggler/pose', PoseStamped, queue_size=1)
     self.pub_vel = rospy.Publisher('boondoggler/vel', Vector3Stamped, queue_size=1)
     self.pub_uav_state = rospy.Publisher('boondoggler/uav_state', EstUavState, queue_size=1)
-    
+
     self.seq = 0
 
     rospy.loginfo('EKF: initialized state.')
@@ -67,6 +67,8 @@ class EKF:
     
     self.sub_imu = rospy.Subscriber('/mavros/imu/data_raw', Imu, self.msgHandler, queue_size=1)
     rospy.loginfo('     Imu...')
+    self.sub_lidarlite = rospy.Subscriber('/mavros/distance_sensor/lidarlite_pub', Range, self.msgHandler, queue_size=1)
+    rospy.loginfo('     Lidarlite...')
 
     return
 
@@ -83,8 +85,9 @@ class EKF:
 
     # handle particular measurement type
     if isinstance(msg, Imu):
-        self.update_IMU(msg)
-
+      self.update_IMU(msg)
+    elif isinstance(msg, Range):
+      self.update_Lidarlite(msg)
     else:
         rospy.logerr('EKF: invalid measurement type.')
 
@@ -127,6 +130,30 @@ class EKF:
     # rospy.loginfo('Completed IMU update.')
     # model.print_state(self.x)
         
+    return
+
+  def update_Lidarlite(self, lidarlite):
+    ts = lidarlite.header.stamp
+
+    r = lidarlite.range
+
+    # handle propogation if neccessary
+    dt = (ts - self.prop_time).to_sec()
+    if dt > 0:
+      # propogate
+      (self.x, self.Sigma) = self.propogate(self.x, self.Sigma, self.u, dt, self.disturb_mode)
+    else:
+      rospy.logwarn('lidarlite message from the past')
+      if abs(dt) > 0.1:
+        rospy.logwarn('   too old, skipping')
+
+    # Now do correction
+    z = np.array([r])
+
+    (h,Hx,Q) = model.observation_alt_lidar(self.x, self.disturb_mode)
+    (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
+    (x, Sigma) = model.enforce_bounds(x_c, Sigma_c)
+
     return
 
   # Propogation
@@ -178,33 +205,18 @@ class EKF:
     if False in np.isfinite(Hx):
       raise Exception('Argument Hx has non-finite elements.')
 
-    if m == 1:
-      if z.shape != ():
-        raise Exception('Argument z has incorrect dimension.')
-      if z_pred.shape != ():
-        raise Exception('Argument z_pred has incorrect dimension.')
-      if Hx.shape != (n,):
-        raise Exception('Argument Hx has incorrect dimension.')
-      if Q.shape != ():
-        raise Exception('Arugment Q has incorrect dimension.')
-      if not np.isfinite(z_pred):
-        raise Exception('Argument z_pred has non-finite elements.')
-      if not np.isfinite(Q):
-        raise Exception('Argument Q has non-finite elements.')
-
-    else:
-      if z.shape != (m,):
-        raise Exception('Argument z has incorrect dimension.')
-      if z_pred.shape != (m,):
-        raise Exception('Argument z_pred has incorrect dimension.')
-      if Hx.shape != (m, n):
-        raise Exception('Argument Hx has incorrect dimension.')
-      if Q.shape != (m, m):
-        raise Exception('Arugment Q has incorrect dimension.')
-      if False in np.isfinite(z_pred):
-        raise Exception('Argument z_pred has non-finite elements.')
-      if False in np.isfinite(Q):
-        raise Exception('Argument Q has non-finite elements.')
+    if z.shape != (m,):
+      raise Exception('Argument z has incorrect dimension.')
+    if z_pred.shape != (m,):
+      raise Exception('Argument z_pred has incorrect dimension.')
+    if Hx.shape != (m, n):
+      raise Exception('Argument Hx has incorrect dimension.')
+    if Q.shape != (m, m):
+      raise Exception('Arugment Q has incorrect dimension.')
+    if False in np.isfinite(z_pred):
+      raise Exception('Argument z_pred has non-finite elements.')
+    if False in np.isfinite(Q):
+      raise Exception('Argument Q has non-finite elements.')
 
     # calculate K
     A = Hx.dot(Sigma).dot(Hx.T) + Q
