@@ -4,10 +4,6 @@
 # Header
 std_msgs/Header header
 
-# State vector and covariance
-float64[] state
-float64[] covariance
-
 int32 disturb_mode
 int32 in_flight
 

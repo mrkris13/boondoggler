@@ -32,7 +32,7 @@ from geometry_msgs.msg import Quaternion
 
 from tf.transformations import quaternion_from_euler
 
-from boondoggler.msg import EstUavState
+from boondoggler.msg import BoondogglerStatus
 
 class EKF:
 
@@ -59,7 +59,7 @@ class EKF:
 
     self.pub_pose = rospy.Publisher('boondoggler/pose', PoseStamped, queue_size=1)
     self.pub_vel = rospy.Publisher('boondoggler/vel', TwistStamped, queue_size=1)
-    self.pub_uav_state = rospy.Publisher('boondoggler/uav_state', EstUavState, queue_size=1)
+    self.pub_status = rospy.Publisher('boondoggler/status', BoondogglerStatus, queue_size=1)
 
     self.seq = 0
 
@@ -316,7 +316,18 @@ class EKF:
 
     self.pub_vel.publish(vels)
 
+    status = BoondogglerStatus()
+    status.header.stamp = self.prop_time
+    status.header.frame_id = '/world'
+    status.header.seq = self.seq
 
+    status.sp_thrust = self.x[model.VAR_SP_THRUST]
+    status.drag_coefficient = self.x[model.VAR_DRAG_CO]
+    status.gyro_biases.x = self.x[model.VAR_GBIAS_P]
+    status.gyro_biases.y = self.x[model.VAR_GBIAS_Q]
+    status.gyro_biases.z = self.x[model.VAR_GBIAS_R]
+
+    self.pub_status.publish(status)
 
     self.seq += 1
     return
