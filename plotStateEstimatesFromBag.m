@@ -103,9 +103,9 @@ subplot(2,2,4);
 title('qw');
 
 figure;
-subplot(1,2,1);
+subplot(2,1,1);
 title('roll');
-subplot(1,2,2);
+subplot(2,1,2);
 title('pitch');
 
 figure;
@@ -139,10 +139,10 @@ for s = 1:S
   plot(sources{s}.ts, sources{s}.q(:,4));
   
   figure(4);
-  subplot(1,2,1);
+  subplot(2,1,1);
   hold all;
   plot(sources{s}.ts, sources{s}.euler(:,1));
-  subplot(1,2,2);
+  subplot(2,1,2);
   hold all;
   plot(sources{s}.ts, sources{s}.euler(:,2));
   
