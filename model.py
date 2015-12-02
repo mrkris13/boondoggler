@@ -175,6 +175,29 @@ def process_model(x, u, dt, disturb_mode):
 
 ########################### Observation Models
 
+def observation_zupt(x):
+# Inputs:
+#   x:    Vehicle state vector
+# Outputs:
+#   h:    Prediction of measurement given current state
+#   Hx:   Jacobian of measurement wrt robot state
+#   Q:    Measurement covariance matrix
+  
+  # Zero-velocity UPdaTe
+  # nails down gyro biases before takeoff -- strong assumption of zero movement
+
+  gyro_biases = x[VAR_GBIAS_P:VAR_GBIAS_P+3]
+
+  # we should just be measuring biases
+  h = gyro_biases;
+
+  Hx = np.zeros([3,VAR_COUNT])
+  Hx[0:3, VAR_GBIAS_P:VAR_GBIAS_P+3] = np.eye(3)
+
+  Q = np.diag([0.01**2, 0.01**2, 0.01**2])
+
+  return (h,Hx,Q)
+
 def observation_acc(x, disturb_mode):
 # Inputs:
 #   x:    Vehicle state vector
@@ -230,7 +253,9 @@ def observation_alt_lidar(x, disturb_mode):
 
   return (h,Hx,Q)
 
-def accel_check_for_bump(x, acc):
+################# Misc
+
+def accel_detect_bump(x, acc):
   # Inputs:
   #   x:              State vector
   #   acc:            Accelerometer data

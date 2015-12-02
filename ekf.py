@@ -124,7 +124,7 @@ class EKF:
     z = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
 
     # check for bump/disturbance
-    if model.accel_check_for_bump(self.x, z):
+    if model.accel_detect_bump(self.x, z):
       self.disturb_mode = model.DISTURB_ACTIVE
       self.bump_time = ts
       rospy.loginfo('Bump detected')
@@ -137,9 +137,6 @@ class EKF:
     (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
     (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
     (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
-
-    # rospy.loginfo('Completed IMU update.')
-    # model.print_state(self.x)
         
     return
 
