@@ -242,7 +242,7 @@ def accel_check_for_bump(x, acc):
   # strapdown accelerometer measures body accel - gravity
   body_accel = np.linalg.norm( acc + R.dot(grav_vect) )
 
-  if body_accel > 1.5:  # threshold in [m/s^2]
+  if body_accel > 9:  # threshold in [m/s^2]
     return True
   else:
     return False
