@@ -43,6 +43,7 @@ find_package(catkin REQUIRED message_generation sensor_msgs geometry_msgs)
 add_message_files(
   FILES
   EstUavState.msg
+  BoondogglerStatus.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -63,6 +64,7 @@ add_message_files(
 generate_messages(
   DEPENDENCIES
   std_msgs  # Or other packages containing msgs
+  geometry_msgs
 )
 
 ################################################
