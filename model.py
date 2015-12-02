@@ -145,15 +145,15 @@ def process_model(x, u, dt, disturb_mode):
     Fu = dt*dFu
 
     ## Measurement and process noise matrices -- TUNABLE
-    M = np.diag([0.015**2, 0.015**2, 0.015**2]) * dt**2
+    M = np.diag([0.005**2, 0.005**2, 0.005**2]) * dt**2
     
     dR = np.zeros((VAR_COUNT, VAR_COUNT))
-    dR[VAR_ROLL, VAR_ROLL]   = 0.25**2
-    dR[VAR_PITCH, VAR_PITCH] = 0.25**2
-    dR[VAR_YAW, VAR_YAW]     = 0.25**2
-    dR[VAR_VEL_U, VAR_VEL_U] = 0.25**2
-    dR[VAR_VEL_V, VAR_VEL_V] = 0.25**2
-    dR[VAR_VEL_W, VAR_VEL_W] = 0.25**2
+    dR[VAR_ROLL, VAR_ROLL]   = 0.20**2
+    dR[VAR_PITCH, VAR_PITCH] = 0.20**2
+    dR[VAR_YAW, VAR_YAW]     = 0.20**2
+    dR[VAR_VEL_U, VAR_VEL_U] = 0.20**2
+    dR[VAR_VEL_V, VAR_VEL_V] = 0.20**2
+    dR[VAR_VEL_W, VAR_VEL_W] = 0.20**2
     dR[VAR_SP_THRUST, VAR_SP_THRUST] = 1.5**2
     dR[VAR_POS_X, VAR_POS_X] = 0.25**2
     dR[VAR_POS_Y, VAR_POS_Y] = 0.25**2
@@ -220,8 +220,8 @@ def observation_alt_lidar(x, disturb_mode):
   #   Q:    Measurement covariance matrix
   pos_z = x[VAR_POS_Z]
 
-  # assume quad is near level, measuring distance to flat ground and offset by 1 cm
-  h = np.array([ pos_z + 0.01 ])
+  # assume quad is near level, measuring distance to flat ground and offset by a few centimeters
+  h = np.array([ pos_z + 0.04 ])
 
   Hx = np.zeros([1, VAR_COUNT])
   Hx[0, VAR_POS_Z] = 1;
@@ -242,7 +242,7 @@ def accel_check_for_bump(x, acc):
   # strapdown accelerometer measures body accel - gravity
   body_accel = np.linalg.norm( acc + R.dot(grav_vect) )
 
-  if body_accel > 1.0:  # threshold in [m/s^2]
+  if body_accel > 1.5:  # threshold in [m/s^2]
     return True
   else:
     return False
