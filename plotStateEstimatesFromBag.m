@@ -28,10 +28,12 @@ sources = cell(2,1);
 sources{1}.name = 'Boondoggler';
 sources{1}.topic_pose = '/boondoggler/pose';
 sources{1}.topic_vel = '/boondoggler/vel';
+sources{1}.rotate_vel = false;
 
 sources{2}.name = 'Vicon';
 sources{2}.topic_pose = '/f450/pose';
 sources{2}.topic_vel = '/f450/vel';
+sources{2}.rotate_vel = true;
 
 %% Populate data from bag
 S = size(sources,1);
@@ -50,12 +52,12 @@ if window_duration > 150 && nargin < 2
 end
 
 for s = 1:S
-  disp(sprintf('Extracting %s data...', sources{s}.name));
+  disp(sprintf('Extracting %s pose data...', sources{s}.name));
   pose_msgs = select(bag, 'Time', time_window, 'Topic', sources{s}.topic_pose );
   
-  t_series = timeseries(pose_msgs, 'Pose.Position.X', 'Pose.Position.Y', 'Pose.Position.Z', 'Pose.Orientation.W', 'Pose.Orientation.X', 'Pose.Orientation.Y', 'Pose.Orientation.Z');
+  t_series_pose = timeseries(pose_msgs, 'Pose.Position.X', 'Pose.Position.Y', 'Pose.Position.Z', 'Pose.Orientation.W', 'Pose.Orientation.X', 'Pose.Orientation.Y', 'Pose.Orientation.Z');
   
-  if isempty(t_series)
+  if isempty(t_series_pose)
     disp(sprintf('No %s data found on topic %s.', sources{s}.name, sources{s}.topic_pose));
     sources{s}.empty = true;
     continue
@@ -67,13 +69,26 @@ for s = 1:S
   first_pose_msgs = readMessages(select(bag,'Time',[bag.StartTime,bag.StartTime+1], 'Topic', sources{s}.topic_pose));
   first_pos = [first_pose_msgs{1}.Pose.Position.X, first_pose_msgs{1}.Pose.Position.Y, first_pose_msgs{1}.Pose.Position.Z];
   
-  sources{s}.ts = bsxfun(@minus, t_series.Time, bag.StartTime);
-  sources{s}.pos = bsxfun(@minus, t_series.Data(:,1:3), first_pos);
-  sources{s}.q = t_series.Data(:,4:7);
+  sources{s}.ts = bsxfun(@minus, t_series_pose.Time, bag.StartTime);
+  sources{s}.pos = bsxfun(@minus, t_series_pose.Data(:,1:3), first_pos);
+  sources{s}.q = t_series_pose.Data(:,4:7);
   
   % convert quaternions to euler angles
   [roll,pitch,yaw] = quat_to_euler(sources{s}.q);
   sources{s}.euler = [roll,pitch,yaw];
+  
+  disp(sprintf('Extracting %s vel data...', sources{s}.name));
+  vel_msgs = select(bag, 'Time', time_window, 'Topic', sources{s}.topic_vel );
+  
+  t_series_vel = timeseries(vel_msgs, 'Twist.Linear.X', 'Twist.Linear.Y', 'Twist.Linear.Z');
+  sources{s}.vel_ts = bsxfun(@minus, t_series_vel.Time, bag.StartTime);
+  sources{s}.vel = t_series_vel.Data(:,1:3);
+  if sources{s}.rotate_vel == true
+    disp('rotating...')
+    % assume we don't need to time-align quaternions to velocity data
+    sources{s}.vel = quatrotate(sources{s}.q, sources{s}.vel);
+  end
+  
 end
 
 clear first_pose_msgs;
@@ -94,13 +109,13 @@ xlabel('X');
 
 figure;
 subplot(2,2,1);
-title('qx');
-subplot(2,2,2);
-title('qy');
-subplot(2,2,3);
-title('qz');
-subplot(2,2,4);
 title('qw');
+subplot(2,2,2);
+title('qx');
+subplot(2,2,3);
+title('qy');
+subplot(2,2,4);
+title('qz');
 
 figure;
 subplot(2,1,1);
@@ -110,6 +125,14 @@ title('pitch');
 
 figure;
 title('yaw');
+
+figure;
+subplot(3,1,1);
+title('vel_u');
+subplot(3,1,2);
+title('vel_v');
+subplot(3,1,3);
+title('vel_w');
 
 for s = 1:S
   if sources{s}.empty
@@ -150,6 +173,18 @@ for s = 1:S
   hold all;
   polar(sources{s}.euler(:,3), sources{s}.ts);
   
+  figure(6);
+  subplot(3,1,1);
+  hold all;
+  plot(sources{s}.vel_ts, sources{s}.vel(:,1));
+  subplot(3,1,2);
+  hold all;
+  plot(sources{s}.vel_ts, sources{s}.vel(:,2));
+  subplot(3,1,3);
+  hold all;
+  plot(sources{s}.vel_ts, sources{s}.vel(:,3));
+  
+  
 end
 
 names = {};
@@ -167,6 +202,8 @@ legend(names);
 figure(4);
 legend(names);
 figure(5);
+legend(names);
+figure(6);
 legend(names);
 
 end
