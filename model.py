@@ -10,6 +10,7 @@ import rospy
 
 # Physical constants
 grav_acc = 9.80665 #[m/s]
+grav_vect = np.array([0, 0, -grav_acc])
 
 # Vehicle state variable enumeration
 VAR_COUNT     = 14
@@ -75,9 +76,6 @@ def process_model(x, u, dt, disturb_mode):
     # extract gyro rates
     corr_gyro = u - gyro_biases
 
-    # gravity vector
-    grav_vect = np.array([0, 0, -grav_acc])
-
     ## Calculate mean f
     # calculate inertial-to-body coordinate frame
     R = i2bRotMatrix(x)
@@ -121,7 +119,7 @@ def process_model(x, u, dt, disturb_mode):
     dFx[VAR_ROLL:VAR_ROLL+3, VAR_PITCH] = dL_dPitch.dot(corr_gyro)
     dFx[VAR_ROLL:VAR_ROLL+3, VAR_YAW]   = dL_dYaw.dot(corr_gyro)
     
-    dFu[VAR_ROLL:VAR_ROLL+3, 0:3]                         = L_gyro
+    dFu[VAR_ROLL:VAR_ROLL+3, 0:3]                         =  L_gyro
 
     dFx[VAR_ROLL:VAR_ROLL+3, VAR_GBIAS_P:VAR_GBIAS_P+3]   = -L_gyro
 
@@ -167,9 +165,9 @@ def process_model(x, u, dt, disturb_mode):
 
     if disturb_mode == DISTURB_ACTIVE:
       # inflate noise matrices appropriately
-      dR[VAR_ROLL:VAR_ROLL+3, VAR_ROLL:VAR_ROLL+3]      += 0.30**2*np.eye(3)
-      dR[VAR_VEL_U:VAR_VEL_U+3, VAR_VEL_U:VAR_VEL_U+3]  += 0.20**2*np.eye(3)
-      dR[VAR_POS_X:VAR_POS_X+3, VAR_POS_X:VAR_POS_X+3]  += 0.10**2*np.eye(3)
+      dR[VAR_ROLL:VAR_ROLL+3, VAR_ROLL:VAR_ROLL+3]      += 0.5**2*np.eye(3)
+      dR[VAR_VEL_U:VAR_VEL_U+3, VAR_VEL_U:VAR_VEL_U+3]  += 0.5**2*np.eye(3)
+      dR[VAR_POS_X:VAR_POS_X+3, VAR_POS_X:VAR_POS_X+3]  += 0.2**2*np.eye(3)
 
     R = dR * dt**2
 
@@ -191,24 +189,24 @@ def observation_acc(x, disturb_mode):
   thrust = x[VAR_SP_THRUST]
   drag_coeff = x[VAR_DRAG_CO]
 
-  h = np.array([ \
+  h = np.array([          \
       -drag_coeff*vel_u,  \
       -drag_coeff*vel_v,  \
-      thrust,            \
+      thrust,             \
       ])
 
   Hx = np.zeros([3, VAR_COUNT])
 
-  Hx[0, VAR_VEL_U] = -drag_coeff
-  Hx[0, VAR_DRAG_CO] = -vel_u
-  Hx[1, VAR_VEL_V] = -drag_coeff
-  Hx[1, VAR_DRAG_CO] = -vel_v
-  Hx[2, VAR_SP_THRUST] = 1.0
+  Hx[0, VAR_VEL_U]      = -drag_coeff
+  Hx[0, VAR_DRAG_CO]    = -vel_u
+  Hx[1, VAR_VEL_V]      = -drag_coeff
+  Hx[1, VAR_DRAG_CO]    = -vel_v
+  Hx[2, VAR_SP_THRUST]  =  1.0
 
   if disturb_mode == DISTURB_NOMINAL:
-    Q = np.diag([0.25**2, 0.25**2, 0.25**2])
+    Q = np.diag([0.15**2, 0.15**2, 0.15**2])
   else:  # DISTURB_ACTIVE
-    Q = np.diag([0.8**2, 0.8**2, 0.8**2])
+    Q = np.diag([1.0**2, 1.0**2, 1.0**2])
 
   return (h,Hx,Q)
 
@@ -222,15 +220,32 @@ def observation_alt_lidar(x, disturb_mode):
   #   Q:    Measurement covariance matrix
   pos_z = x[VAR_POS_Z]
 
-  # assume quad is near level, measuring distance to flat ground
-  h = np.array([ pos_z ])
+  # assume quad is near level, measuring distance to flat ground and offset by 1 cm
+  h = np.array([ pos_z + 0.01 ])
 
   Hx = np.zeros([1, VAR_COUNT])
   Hx[0, VAR_POS_Z] = 1;
 
-  Q = np.diag([0.05**2]);
+  Q = np.diag([0.005**2]);
 
   return (h,Hx,Q)
+
+def accel_check_for_bump(x, acc):
+  # Inputs:
+  #   x:              State vector
+  #   acc:            Accelerometer data
+  # Outputs:
+  #   bump_detected:  Boolean
+
+  R = i2bRotMatrix(x)
+
+  # strapdown accelerometer measures body accel - gravity
+  body_accel = np.linalg.norm( acc + R.dot(grav_vect) )
+
+  if body_accel > 1.0:  # threshold in [m/s^2]
+    return True
+  else:
+    return False
 
 ################### Transform Utility functions
 

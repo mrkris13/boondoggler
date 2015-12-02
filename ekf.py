@@ -121,7 +121,18 @@ class EKF:
       rospy.logwarn('IMU message recieved from the past.')
 
     # Now do correction based on accelerometer
-    z = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])        
+    z = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
+
+    # check for bump/disturbance
+    if model.accel_check_for_bump(self.x, z):
+      self.disturb_mode = model.DISTURB_ACTIVE
+      self.bump_time = ts
+      rospy.loginfo('Bump detected')
+    else:
+      # if we're not nominal, but it's been a while since last bump, return to nominal
+      if self.disturb_mode != model.DISTURB_NOMINAL and (ts - self.bump_time).to_sec() > 0.25:
+        self.disturb_mode = model.DISTURB_NOMINAL
+        rospy.loginfo('Return to nominal')
 
     (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
     (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
@@ -212,7 +223,7 @@ class EKF:
     if Hx.shape != (m, n):
       raise Exception('Argument Hx has incorrect dimension.')
     if Q.shape != (m, m):
-      raise Exception('Arugment Q has incorrect dimension.')
+      raise Exception('Argument Q has incorrect dimension.')
     if False in np.isfinite(z_pred):
       raise Exception('Argument z_pred has non-finite elements.')
     if False in np.isfinite(Q):
@@ -220,18 +231,12 @@ class EKF:
 
     # calculate K
     A = Hx.dot(Sigma).dot(Hx.T) + Q
-    if A.shape == ():
-      if A == 0.0:
-        rospy.logerr('EKFUpdate: Division by 0 detected.')
-        return (mu, Sigma)
-      try:
-        A_inv = 1.0/A;
-      except LinAlgError as e:
-        print 'EKFUpdate: {}'.format(e.strerror)
-        print A
-        return (mu, Sigma)
-    else:
-      A_inv = linalg.inv(A)
+    try:
+      A_inv = linalg.inv(A);
+    except LinAlgError as e:
+      print 'EKFUpdate: {}'.format(e.strerror)
+      print A
+      return (mu, Sigma)
 
     K = Sigma.dot(Hx.T).dot(A_inv) # K is nxm
 
