@@ -27,7 +27,7 @@ from sensor_msgs.msg import Imu
 from sensor_msgs.msg import Range
 
 from geometry_msgs.msg import PoseStamped
-from geometry_msgs.msg import Vector3Stamped
+from geometry_msgs.msg import TwistStamped
 from geometry_msgs.msg import Quaternion
 
 from tf.transformations import quaternion_from_euler
@@ -54,7 +54,7 @@ class EKF:
     self.disturb_mode = model.DISTURB_NOMINAL
 
     self.pub_pose = rospy.Publisher('boondoggler/pose', PoseStamped, queue_size=1)
-    self.pub_vel = rospy.Publisher('boondoggler/vel', Vector3Stamped, queue_size=1)
+    self.pub_vel = rospy.Publisher('boondoggler/vel', TwistStamped, queue_size=1)
     self.pub_uav_state = rospy.Publisher('boondoggler/uav_state', EstUavState, queue_size=1)
 
     self.seq = 0
@@ -154,9 +154,9 @@ class EKF:
       # propogate
       (self.x, self.Sigma) = self.propogate(self.x, self.Sigma, self.u, dt, self.disturb_mode)
     else:
-      rospy.logwarn('lidarlite message from the past by %f seconds', -dt)
+      # rospy.logwarn('lidarlite message from the past by %f seconds', -dt)
       if abs(dt) > 0.1:
-        rospy.logwarn('   too old, skipping')
+        rospy.logwarn('lidarlite message %f seconds old, skipping', -dt)
         return
 
     # Now do correction
@@ -281,14 +281,14 @@ class EKF:
 
     self.pub_pose.publish(pose)
 
-    vels = Vector3Stamped()
+    vels = TwistStamped()
     vels.header.stamp = self.prop_time
     vels.header.frame_id = '/body'
     vels.header.seq = self.seq
 
-    vels.vector.x =  self.x[model.VAR_VEL_U]
-    vels.vector.y =  self.x[model.VAR_VEL_V]
-    vels.vector.z =  self.x[model.VAR_VEL_W]
+    vels.twist.linear.x =  self.x[model.VAR_VEL_U]
+    vels.twist.linear.y =  self.x[model.VAR_VEL_V]
+    vels.twist.linear.z =  self.x[model.VAR_VEL_W]
 
     self.pub_vel.publish(vels)
 
