@@ -255,10 +255,11 @@ def observation_alt_lidar(x, disturb_mode):
 
 ################# Misc
 
-def accel_detect_bump(x, acc):
+def accel_detect_bump(x, acc, threshold):
   # Inputs:
   #   x:              State vector
   #   acc:            Accelerometer data
+  #   threshold:      Threshold in [m/s^2]
   # Outputs:
   #   bump_detected:  Boolean
 
@@ -267,7 +268,23 @@ def accel_detect_bump(x, acc):
   # strapdown accelerometer measures body accel - gravity
   body_accel = np.linalg.norm( acc + R.dot(grav_vect) )
 
-  if body_accel > 9:  # threshold in [m/s^2]
+  if body_accel > threshold:
+    return True
+  else:
+    return False
+
+def accel_detect_takeoff(x, acc):
+  # Inputs:
+  #   x:                  State vector
+  #   acc:                Accelerometer data vector
+  # Outputs:
+  #   takeoff_detected:   Boolean
+
+  # we can detect takeoff by spike in vertical acceleration
+
+  acc_applied_z = acc[2] - grav_acc
+
+  if acc_applied_z > 6.0:
     return True
   else:
     return False

@@ -44,6 +44,9 @@ class EKF:
 
   disturb_mode  = None
 
+  in_flight     = None  # if in flight regime
+  takeoff_ts    = None
+
   def __init__(self): 
     rospy.loginfo('EKF: initializing EKF object...')
 
@@ -52,6 +55,7 @@ class EKF:
     self.u = model.init_u
 
     self.disturb_mode = model.DISTURB_NOMINAL
+    self.in_flight = False    # STRONG ASSUMPTION we start on the ground
 
     self.pub_pose = rospy.Publisher('boondoggler/pose', PoseStamped, queue_size=1)
     self.pub_vel = rospy.Publisher('boondoggler/vel', TwistStamped, queue_size=1)
@@ -74,15 +78,6 @@ class EKF:
 
   # Top-level call made by measurement msg subscribers
   def msgHandler(self, msg):
-    # initialize filter if not done yet and we just received IMUSample
-    if self.prop_time is None:
-        if isinstance(msg, Imu):
-            self.prop_time = msg.header.stamp
-            rospy.loginfo('EKF: started.')
-        else:
-            rospy.logwarn('EKF: uninitialized - ignoring messages until first IMUSample arrives.')
-            return
-
     # handle particular measurement type
     if isinstance(msg, Imu):
       self.update_IMU(msg)
@@ -91,7 +86,8 @@ class EKF:
     else:
         rospy.logerr('EKF: invalid measurement type.')
 
-    self.publish()
+    if self.prop_time is not None:
+      self.publish()
 
     return
 
@@ -100,61 +96,93 @@ class EKF:
 
     ts = imu.header.stamp
 
-    if ts > self.prop_time:
-      # use UNCORRECTED gyro rates as control signal
-      u = np.array([imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z])
-      new_prop_time = ts
-
-      # Now calculate dt and propogate
-      dt = (new_prop_time - self.prop_time).to_sec()
-      if dt > 0.2:
-          rospy.logwarn('Propogating filter by larger than expected dt.')
-      (x_p, Sigma_p) = self.propogate(self.x, self.Sigma, u, dt, self.disturb_mode)
-
+    if self.prop_time is None:
+      # initialize filter
       self.prop_time = ts
-      (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
-      # model.print_state(self.x)
 
-      self.u = u
-    
-    else:
-      rospy.logwarn('IMU message recieved from the past.')
+    if self.in_flight:
+      if ts > self.prop_time: # we need to propogate
+        # use UNCORRECTED gyro rates as control signal
+        u = np.array([imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z])
+        new_prop_time = ts
 
-    # Now do correction based on accelerometer
-    z = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
+        # Now calculate dt and propogate
+        dt = (new_prop_time - self.prop_time).to_sec()
+        if dt > 0.2:
+            rospy.logwarn('Propogating filter by larger than expected dt.')
+        (x_p, Sigma_p) = self.propogate(self.x, self.Sigma, u, dt, self.disturb_mode)
 
-    # check for bump/disturbance
-    if model.accel_detect_bump(self.x, z):
-      self.disturb_mode = model.DISTURB_ACTIVE
-      self.bump_time = ts
-      rospy.loginfo('Bump detected')
-    else:
-      # if we're not nominal, but it's been a while since last bump, return to nominal
-      if self.disturb_mode != model.DISTURB_NOMINAL and (ts - self.bump_time).to_sec() > 0.25:
-        self.disturb_mode = model.DISTURB_NOMINAL
-        rospy.loginfo('Return to nominal')
+        self.prop_time = ts
+        (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
+        # model.print_state(self.x)
 
-    (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
-    (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
-    (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
-        
+        self.u = u
+      
+      else:
+        rospy.logwarn('IMU message recieved from the past.')
+
+      # Now do correction based on accelerometer
+      z = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
+
+      # check for bump/disturbance
+      if model.accel_detect_bump(self.x, z, 9.0):
+        self.disturb_mode = model.DISTURB_ACTIVE
+        self.bump_time = ts
+        rospy.loginfo('Bump detected')
+      else:
+        # if we're not nominal, but it's been a while since last bump, return to nominal
+        if self.disturb_mode != model.DISTURB_NOMINAL and (ts - self.bump_time).to_sec() > 0.25:
+          self.disturb_mode = model.DISTURB_NOMINAL
+          rospy.loginfo('Return to nominal')
+
+      (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
+      (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
+      (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+
+    else:   # not in flight mode
+
+      # don't propogate
+      # XXX: could implement alternative process model
+      self.prop_time = ts
+      
+      # check for takeoff
+      acc = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
+
+      if model.accel_detect_takeoff(self.x, acc):
+        rospy.loginfo('Takeoff detected.')
+        self.in_flight = True
+        self.takeoff_ts = ts
+        # assume we start in disturbed state
+        self.disturb_mode = model.DISTURB_ACTIVE
+        self.bump_time = ts
+
+      else: # we can try to zupt
+        # we need to be pretty sure there's no motion (use low threshold)
+        if not model.accel_detect_bump(self.x, acc, 0.25):
+          rospy.loginfo('zupting')
+
+          z = np.array([imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z])
+          (h, Hx, Q) = model.observation_zupt(self.x)
+          (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
+          (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+
     return
 
   def update_Lidarlite(self, lidarlite):
     ts = lidarlite.header.stamp
-
     r = lidarlite.range
 
-    # handle propogation if neccessary
-    dt = (ts - self.prop_time).to_sec()
-    if dt > 0:
-      # propogate
-      (self.x, self.Sigma) = self.propogate(self.x, self.Sigma, self.u, dt, self.disturb_mode)
-    else:
-      # rospy.logwarn('lidarlite message from the past by %f seconds', -dt)
-      if abs(dt) > 0.1:
-        rospy.logwarn('lidarlite message %f seconds old, skipping', -dt)
-        return
+    if self.in_flight and self.prop_time is not None:
+      # handle propogation if neccessary
+      dt = (ts - self.prop_time).to_sec()
+      if dt > 0:
+        # propogate
+        (self.x, self.Sigma) = self.propogate(self.x, self.Sigma, self.u, dt, self.disturb_mode)
+      else:
+        # rospy.logwarn('lidarlite message from the past by %f seconds', -dt)
+        if abs(dt) > 0.1:
+          rospy.logwarn('lidarlite message %f seconds old, skipping', -dt)
+          return
 
     # Now do correction
     z = np.array([r])
@@ -186,7 +214,6 @@ class EKF:
     Sigma_p = Fx.dot(Sigma).dot(Fx.transpose()) + Fu.dot(M).dot(Fu.transpose()) + R
 
     return (f, Sigma_p) 
-
 
   # Update
   def update(self, mu, Sigma, z, z_pred, Hx, Q):
