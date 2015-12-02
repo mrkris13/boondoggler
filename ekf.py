@@ -154,16 +154,17 @@ class EKF:
       # propogate
       (self.x, self.Sigma) = self.propogate(self.x, self.Sigma, self.u, dt, self.disturb_mode)
     else:
-      rospy.logwarn('lidarlite message from the past')
+      rospy.logwarn('lidarlite message from the past by %f seconds', -dt)
       if abs(dt) > 0.1:
         rospy.logwarn('   too old, skipping')
+        return
 
     # Now do correction
     z = np.array([r])
 
     (h,Hx,Q) = model.observation_alt_lidar(self.x, self.disturb_mode)
     (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
-    (x, Sigma) = model.enforce_bounds(x_c, Sigma_c)
+    (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
 
     return
 
@@ -187,7 +188,7 @@ class EKF:
     # calculate predicted covariance
     Sigma_p = Fx.dot(Sigma).dot(Fx.transpose()) + Fu.dot(M).dot(Fu.transpose()) + R
 
-    return (f, Sigma_p)
+    return (f, Sigma_p) 
 
 
   # Update
