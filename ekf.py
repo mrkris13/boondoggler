@@ -267,6 +267,12 @@ class EKF:
     yaw = self.x[model.VAR_YAW]
 
     q = quaternion_from_euler(roll, pitch, yaw)
+    # account for double-cover by forcing w > 0
+    if q[3] < 0.0:
+      q[0] = -q[0]
+      q[1] = -q[1]
+      q[2] = -q[2]
+      q[3] = -q[3]
     pose.pose.orientation = Quaternion(*q)
 
     pose.pose.position.x =  self.x[model.VAR_POS_X]
