@@ -36,10 +36,10 @@ init_mu[VAR_DRAG_CO]    =  1.0
 
 init_Sigmas = np.zeros(VAR_COUNT)
 init_Sigmas[VAR_ROLL:VAR_YAW+1]     = 1e-2*np.ones(3)
-init_Sigmas[VAR_VEL_U:VAR_VEL_W+1]  = 1e-1*np.ones(3)
+init_Sigmas[VAR_VEL_U:VAR_VEL_W+1]  = 1e-2*np.ones(3)
 init_Sigmas[VAR_SP_THRUST]          = 0.5
-init_Sigmas[VAR_POS_X:VAR_POS_Z+1]  = 1e-3*np.ones(3)  # we are pretty certain because we define initial position as origin
-init_Sigmas[VAR_GBIAS_P:VAR_GBIAS_R+1] = 1e-2*np.ones(3)
+init_Sigmas[VAR_POS_X:VAR_POS_Z+1]  = 1e-5*np.ones(3)  # we are pretty certain because we define initial position as origin
+init_Sigmas[VAR_GBIAS_P:VAR_GBIAS_R+1] = 0.5*np.ones(3)
 init_Sigmas[VAR_DRAG_CO]            = 2.0
 init_Sigma = np.diag(init_Sigmas)
 
@@ -50,7 +50,7 @@ DISTURB_NOMINAL = 0   # no disturbance detected
 DISTURB_ACTIVE  = 1   # disturbance detected, inflate process
 
 ## Process Models
-def process_model(x, u, dt, disturb_mode):
+def process_model_flight(x, u, dt, disturb_mode):
 # Inputs:
 #       x:      Current vehicle state
 #       u:      Control signal (raw gyro rates)
@@ -158,10 +158,10 @@ def process_model(x, u, dt, disturb_mode):
     dR[VAR_POS_X, VAR_POS_X] = 0.25**2
     dR[VAR_POS_Y, VAR_POS_Y] = 0.25**2
     dR[VAR_POS_Z, VAR_POS_Z] = 0.25**2
-    dR[VAR_DRAG_CO, VAR_DRAG_CO] = 1e-6**2
-    dR[VAR_GBIAS_P, VAR_GBIAS_P] = 1e-6**2
-    dR[VAR_GBIAS_Q, VAR_GBIAS_Q] = 1e-6**2
-    dR[VAR_GBIAS_R, VAR_GBIAS_R] = 1e-6**2
+    dR[VAR_DRAG_CO, VAR_DRAG_CO] = 1e-2**2
+    dR[VAR_GBIAS_P, VAR_GBIAS_P] = 1e-5**2
+    dR[VAR_GBIAS_Q, VAR_GBIAS_Q] = 1e-5**2
+    dR[VAR_GBIAS_R, VAR_GBIAS_R] = 1e-5**2
 
     if disturb_mode == DISTURB_ACTIVE:
       # inflate noise matrices appropriately
@@ -172,6 +172,88 @@ def process_model(x, u, dt, disturb_mode):
     R = dR * dt**2
 
     return (f, Fx, Fu, M, R)
+
+def process_model_grounded(x, u, dt, disturb_mode):
+# Inputs:
+#       x:      Current vehicle state
+#       u:      Control signal (raw gyro rates)
+#       dt:     Propogation time [sec]
+#       disturb_mode:  Flag to use disturbance mode
+# Outputs:
+#       f:      Predicted state
+#       Fx:     Jacobian wrt to state
+#       Fu:     Jacobian wrt to control signal
+#       M:      Measurement covariance matrix rate
+#       R:      Process model covariance matrix rate
+  
+    # extract useful state variables
+    gyro_biases = x[VAR_GBIAS_P:VAR_GBIAS_P+3]
+
+    # extract gyro rates
+    corr_gyro = u - gyro_biases
+
+    ## Calculate mean f
+    # calculate inertial-to-body coordinate frame
+    R = i2bRotMatrix(x)
+    Rt = R.T
+
+    # define transform from gyro body rates to Euler rates
+    L_gyro = gyroRateTF(x)
+
+    # calculate state rate vector
+    df = np.zeros(VAR_COUNT)
+    df[VAR_ROLL:VAR_ROLL+3]     = L_gyro.dot(corr_gyro)
+    
+    # integrate state rate vector to get new mean
+    f  = x + dt*df
+
+    ## Calculate Jacobians
+    # robot model Jacobian wrt x_v
+    dFx = np.zeros((VAR_COUNT, VAR_COUNT))
+    # robot model Jacobian wrt u
+    dFu = np.zeros((VAR_COUNT, 3))
+
+    # calc partial derivatives of rotation matrix
+    dR_dRoll    = i2bRotMatrixJacobianRoll(x)
+    dR_dPitch   = i2bRotMatrixJacobianPitch(x)
+    dR_dYaw     = i2bRotMatrixJacobianYaw(x)
+
+    # calc partial derivatives of gyro rate transform matrix
+    dL_dRoll    = gyroRateTFJacobianRoll(x)
+    dL_dPitch   = gyroRateTFJacobianPitch(x)
+    dL_dYaw     = gyroRateTFJacobianYaw(x)
+
+    # euler angular derivatives
+    dFx[VAR_ROLL:VAR_ROLL+3, VAR_ROLL]  = dL_dRoll.dot(corr_gyro)
+    dFx[VAR_ROLL:VAR_ROLL+3, VAR_PITCH] = dL_dPitch.dot(corr_gyro)
+    dFx[VAR_ROLL:VAR_ROLL+3, VAR_YAW]   = dL_dYaw.dot(corr_gyro)
+    
+    dFu[VAR_ROLL:VAR_ROLL+3, 0:3]                         =  L_gyro
+    dFx[VAR_ROLL:VAR_ROLL+3, VAR_GBIAS_P:VAR_GBIAS_P+3]   = -L_gyro
+
+    # integration
+    Fx = np.eye(VAR_COUNT) + dt*dFx
+    Fu = dt*dFu
+
+    ## Measurement and process noise matrices -- TUNABLE
+    M = np.diag([0.005**2, 0.005**2, 0.005**2]) * dt**2
+    
+    dR = np.zeros((VAR_COUNT, VAR_COUNT))
+    dR[VAR_ROLL, VAR_ROLL]   = 0.20**2
+    dR[VAR_PITCH, VAR_PITCH] = 0.20**2
+    dR[VAR_YAW, VAR_YAW]     = 0.20**2
+    dR[VAR_GBIAS_P, VAR_GBIAS_P] = 1e-5**2
+    dR[VAR_GBIAS_Q, VAR_GBIAS_Q] = 1e-5**2
+    dR[VAR_GBIAS_R, VAR_GBIAS_R] = 1e-5**2
+
+    if disturb_mode == DISTURB_ACTIVE:
+      # inflate noise matrices appropriately
+      dR[VAR_ROLL:VAR_ROLL+3, VAR_ROLL:VAR_ROLL+3]      += 0.25**2*np.eye(3)
+
+    R = dR * dt**2
+
+    return (f, Fx, Fu, M, R)
+
 
 ########################### Observation Models
 
@@ -281,13 +363,23 @@ def accel_detect_takeoff(x, acc):
   #   takeoff_detected:   Boolean
 
   # we can detect takeoff by spike in vertical acceleration
+  R = i2bRotMatrix(x)
 
-  acc_applied_z = acc[2] - grav_acc
+  acc_applied = acc + R.dot(grav_vect)
 
-  if acc_applied_z > 6.0:
+  if acc_applied[2] > 0.7:
     return True
   else:
     return False
+
+def vehicle_is_level(x):
+  # Inputs:
+  #   x:                  State vector
+  # Outputs:
+  #   is_level:   Boolean
+
+  # level if roll and pitch both less than 5deg from 0
+  return ( max(abs(x[VAR_ROLL]), abs(x[VAR_PITCH])) < 0.0872665 )
 
 ################### Transform Utility functions
 

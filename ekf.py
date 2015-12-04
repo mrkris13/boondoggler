@@ -84,7 +84,7 @@ class EKF:
     elif isinstance(msg, Range):
       self.update_Lidarlite(msg)
     else:
-        rospy.logerr('EKF: invalid measurement type.')
+      rospy.logerr('EKF: invalid measurement type.')
 
     if self.prop_time is not None:
       self.publish()
@@ -95,37 +95,13 @@ class EKF:
   def update_IMU(self, imu):
 
     ts = imu.header.stamp
-
-    if self.prop_time is None:
-      # initialize filter
-      self.prop_time = ts
+    # use UNCORRECTED rates as control input
+    gyro_u = np.array([imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z])
+    acc = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
 
     if self.in_flight:
-      if ts > self.prop_time: # we need to propogate
-        # use UNCORRECTED gyro rates as control signal
-        u = np.array([imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z])
-        new_prop_time = ts
-
-        # Now calculate dt and propogate
-        dt = (new_prop_time - self.prop_time).to_sec()
-        if dt > 0.2:
-            rospy.logwarn('Propogating filter by larger than expected dt.')
-        (x_p, Sigma_p) = self.propogate(self.x, self.Sigma, u, dt, self.disturb_mode)
-
-        self.prop_time = ts
-        (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
-        # model.print_state(self.x)
-
-        self.u = u
-      
-      else:
-        rospy.logwarn('IMU message recieved from the past.')
-
-      # Now do correction based on accelerometer
-      z = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
-
       # check for bump/disturbance
-      if model.accel_detect_bump(self.x, z, 9.0):
+      if model.accel_detect_bump(self.x, acc, 9.0):
         self.disturb_mode = model.DISTURB_ACTIVE
         self.bump_time = ts
         rospy.loginfo('Bump detected')
@@ -135,19 +111,17 @@ class EKF:
           self.disturb_mode = model.DISTURB_NOMINAL
           rospy.loginfo('Return to nominal')
 
+      # now propogate if neccessary
+      self.propogate_from_imu(ts, gyro_u)      
+
+      # Now do correction based on accelerometer
       (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
-      (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
+      (x_c, Sigma_c) = self.update(self.x, self.Sigma, acc, h, Hx, Q)
       (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
 
-    else:   # not in flight mode
+    else:   # we're grounded
 
-      # don't propogate
-      # XXX: could implement alternative process model
-      self.prop_time = ts
-      
       # check for takeoff
-      acc = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
-
       if model.accel_detect_takeoff(self.x, acc):
         rospy.loginfo('Takeoff detected.')
         self.in_flight = True
@@ -156,15 +130,19 @@ class EKF:
         self.disturb_mode = model.DISTURB_ACTIVE
         self.bump_time = ts
 
-      else: # we can try to zupt
-        # we need to be pretty sure there's no motion (use low threshold)
-        if not model.accel_detect_bump(self.x, acc, 0.25):
+      else: # use grounder data
+        
+        # if there is very little motion, we can zupt
+        if not model.accel_detect_bump(self.x, acc, 0.05) and model.vehicle_is_level(self.x):
           rospy.loginfo('zupting')
-
-          z = np.array([imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z])
           (h, Hx, Q) = model.observation_zupt(self.x)
-          (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
+          (x_c, Sigma_c) = self.update(self.x, self.Sigma, gyro_u, h, Hx, Q)
           (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+          self.prop_time = ts
+
+        # otherwise propogate grounded model
+        else:
+          self.propogate_from_imu(ts, gyro_u)
 
     return
 
@@ -172,17 +150,13 @@ class EKF:
     ts = lidarlite.header.stamp
     r = lidarlite.range
 
-    if self.in_flight and self.prop_time is not None:
+    if self.prop_time is not None:
       # handle propogation if neccessary
       dt = (ts - self.prop_time).to_sec()
-      if dt > 0:
-        # propogate
-        (self.x, self.Sigma) = self.propogate(self.x, self.Sigma, self.u, dt, self.disturb_mode)
+      if dt < -0.1:
+        rospy.logwarn('lidarlite message %f seconds old, skipping', -dt)
       else:
-        # rospy.logwarn('lidarlite message from the past by %f seconds', -dt)
-        if abs(dt) > 0.1:
-          rospy.logwarn('lidarlite message %f seconds old, skipping', -dt)
-          return
+        self.propogate_blind(ts)
 
     # Now do correction
     z = np.array([r])
@@ -194,7 +168,48 @@ class EKF:
     return
 
   # Propogation
-  def propogate(self, mu, Sigma, u, dt, disturb_mode):
+  def propogate_from_imu(self, ts, u):
+    # Inputs:
+    #       ts:     Timestamp of imu measurement
+    #       u:      Imu rates
+
+    if self.prop_time is None:
+      # initialize filter
+      self.prop_time = ts
+      rospy.loginfo('Ekf started')
+      return
+
+    dt = (ts - self.prop_time).to_sec()
+    if dt > 0: # we need to propogate
+      if dt > 0.2:
+        rospy.logwarn('Propogating filter by larger than expected dt: %f sec', dt)
+      (x_p, Sigma_p) = self.process(self.x, self.Sigma, u, dt, self.disturb_mode)
+
+      (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
+      self.u = u
+      self.prop_time = ts
+    
+    else:
+      rospy.logwarn('IMU message received %f seconds from the past.', -dt)
+
+    return
+  
+  def propogate_blind(self, ts):
+    # Inputs:
+    #       ts:     Timestamp of imu measurement
+    if ts > self.prop_time: # we need to propogate
+      # Now calculate dt and propogate
+      dt = (ts - self.prop_time).to_sec()
+      if dt > 0.2:
+        rospy.logwarn('Propogating filter by larger than expected dt: %f sec', dt)
+      (x_p, Sigma_p) = self.process(self.x, self.Sigma, self.u, dt, self.disturb_mode)
+
+      (self.x, self.Sigma) = model.enforce_bounds(x_p, Sigma_p)
+      self.prop_time = ts
+
+    return
+
+  def process(self, mu, Sigma, u, dt, disturb_mode):
     # Inputs:
     #       mu:     Full state mean vector
     #       Sigma:  State covariance
@@ -207,8 +222,11 @@ class EKF:
 
     n = mu.size
 
-    # propogate vehicle state 
-    (f, Fx, Fu, M, R) = model.process_model(mu, u, dt, disturb_mode)
+    # propogate vehicle state
+    if self.in_flight:
+    	(f, Fx, Fu, M, R) = model.process_model_flight(mu, u, dt, disturb_mode)
+    else:
+    	(f, Fx, Fu, M, R) = model.process_model_grounded(mu, u, dt, disturb_mode)
 
     # calculate predicted covariance
     Sigma_p = Fx.dot(Sigma).dot(Fx.transpose()) + Fu.dot(M).dot(Fu.transpose()) + R
@@ -317,15 +335,18 @@ class EKF:
     self.pub_vel.publish(vels)
 
     status = BoondogglerStatus()
-    status.header.stamp = self.prop_time
-    status.header.frame_id = '/world'
-    status.header.seq = self.seq
+    status.header.stamp     = self.prop_time
+    status.header.frame_id  = '/world'
+    status.header.seq       = self.seq
 
-    status.sp_thrust = self.x[model.VAR_SP_THRUST]
+    status.disturb_mode     = self.disturb_mode
+    status.in_flight        = self.in_flight
+
+    status.sp_thrust        = self.x[model.VAR_SP_THRUST]
     status.drag_coefficient = self.x[model.VAR_DRAG_CO]
-    status.gyro_biases.x = self.x[model.VAR_GBIAS_P]
-    status.gyro_biases.y = self.x[model.VAR_GBIAS_Q]
-    status.gyro_biases.z = self.x[model.VAR_GBIAS_R]
+    status.gyro_biases.x    = self.x[model.VAR_GBIAS_P]
+    status.gyro_biases.y    = self.x[model.VAR_GBIAS_Q]
+    status.gyro_biases.z    = self.x[model.VAR_GBIAS_R]
 
     self.pub_status.publish(status)
 
