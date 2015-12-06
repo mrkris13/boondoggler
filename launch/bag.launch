@@ -1,6 +1,6 @@
 <launch>
 
-  <arg name="topic_list" value="/f450/pose /f450/vel /boondoggler/status /boondoggler/pose /boondoggler/vel" />
+  <arg name="topic_list" value="/f450/pose /f450/vel /boondoggler/status /boondoggler/pose /boondoggler/vel /Batman/pose /Batman/vel" />
   <arg name="output_dir" value="$(find boondoggler)/bag/test" />
 
   <node pkg="rosbag" name="$(anon rosbag)" type="record" args="$(arg topic_list) -o $(arg output_dir)" />

@@ -23,17 +23,22 @@ if nargin > 2
 end
 
 %% Define data sources
-sources = cell(2,1);
+sources = cell(3,1);
 
 sources{1}.name = 'Boondoggler';
 sources{1}.topic_pose = '/boondoggler/pose';
 sources{1}.topic_vel = '/boondoggler/vel';
 sources{1}.rotate_vel = false;
 
-sources{2}.name = 'Vicon';
-sources{2}.topic_pose = '/f450/pose';
-sources{2}.topic_vel = '/f450/vel';
+sources{2}.name = 'Vicon -- Batman';
+sources{2}.topic_pose = '/Batman/pose';
+sources{2}.topic_vel = '/Batman/vel';
 sources{2}.rotate_vel = true;
+
+sources{3}.name = 'Vicon -- f450';
+sources{3}.topic_pose = '/f450/pose';
+sources{3}.topic_vel = '/f450/vel';
+sources{3}.rotate_vel = true;
 
 %% Populate data from bag
 S = size(sources,1);
