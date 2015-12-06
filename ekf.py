@@ -30,6 +30,8 @@ from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import TwistStamped
 from geometry_msgs.msg import Quaternion
 
+from mavros_msgs.msg import OpticalFlowRad
+
 from tf.transformations import quaternion_from_euler
 
 from boondoggler.msg import BoondogglerStatus
@@ -73,7 +75,8 @@ class EKF:
     rospy.loginfo('     Imu...')
     self.sub_lidarlite = rospy.Subscriber('/mavros/distance_sensor/lidarlite_pub', Range, self.msgHandler, queue_size=1)
     rospy.loginfo('     Lidarlite...')
-
+    self.sub_optflow = rospy.Subscriber('/mavros/px4flow/raw/optical_flow_rad', OpticalFlowRad, self.msgHandler, queue_size=1)
+    rospy.loginfo('     PX4Flow...')
     return
 
   # Top-level call made by measurement msg subscribers
@@ -83,6 +86,8 @@ class EKF:
       self.update_IMU(msg)
     elif isinstance(msg, Range):
       self.update_Lidarlite(msg)
+    elif isinstance(msg, OpticalFlowRad):
+      self.update_OptFlowRad(msg)
     else:
       rospy.logerr('EKF: invalid measurement type.')
 
@@ -111,58 +116,112 @@ class EKF:
           self.disturb_mode = model.DISTURB_NOMINAL
           rospy.loginfo('Return to nominal')
 
-      # now propogate if neccessary
-      self.propogate_from_imu(ts, gyro_u)      
+      # propogate if neccessary
+      self.propogate_from_imu(ts, gyro_u) 
 
-      # Now do correction based on accelerometer
-      (h, Hx, Q) = model.observation_acc(self.x, self.disturb_mode)
+      # And do correction based on accelerometer
+      (h, Hx, Q) = model.observation_acc_flight(self.x, self.disturb_mode)
       (x_c, Sigma_c) = self.update(self.x, self.Sigma, acc, h, Hx, Q)
       (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
 
-    else:   # we're grounded
+    elif self.flight_state == model.FLIGHT_STATE_TAKEOFF:
+      # just propogate imu
+      self.propogate_from_imu(ts, gyro_u)
 
+      # transition to flight mode after short period
+      if (ts - self.takeoff_ts).to_sec() > 0.1:
+        self.flight_state = model.FLIGHT_STATE_FLIGHT
+        rospy.loginfo('Entering flight mode.')
+
+    else:   # we're grounded
       # check for takeoff
       if model.accel_detect_takeoff(self.x, acc):
         rospy.loginfo('Takeoff detected.')
-        self.in_flight = True
+        self.flight_state = model.FLIGHT_STATE_TAKEOFF
         self.takeoff_ts = ts
         # assume we start in disturbed state
         self.disturb_mode = model.DISTURB_ACTIVE
         self.bump_time = ts
 
-      else: # use grounder data
-        
-        # if there is very little motion, we can zupt
-        if not model.accel_detect_bump(self.x, acc, 0.05) and model.vehicle_is_level(self.x):
-          rospy.loginfo('zupting')
-          (h, Hx, Q) = model.observation_zupt(self.x)
-          (x_c, Sigma_c) = self.update(self.x, self.Sigma, gyro_u, h, Hx, Q)
-          (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
-          self.prop_time = ts
+      else: # use grounded data
+        # # if there is very little motion, we can zupt
+        # if not model.accel_detect_bump(self.x, acc, 0.1):
+        #   rospy.loginfo('zupting')
+        #   (h, Hx, Q) = model.observation_zupt(self.x)
+        #   (x_c, Sigma_c) = self.update(self.x, self.Sigma, gyro_u, h, Hx, Q)
+        #   (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+        #   self.prop_time = ts
 
         # otherwise propogate grounded model
-        else:
-          self.propogate_from_imu(ts, gyro_u)
-
+        # and use grounded accelerometer model
+        # else:
+        self.propogate_from_imu(ts, gyro_u)
+        
+        (h, Hx, Q) = model.observation_acc_ground(self.x, self.disturb_mode)
+        (x_c, Sigma_c) = self.update(self.x, self.Sigma, acc, h, Hx, Q)
+        (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+        self.prop_time = ts
     return
 
   def update_Lidarlite(self, lidarlite):
     ts = lidarlite.header.stamp
     r = lidarlite.range
 
+    # small measurements may be invalid
+    if r < 0.05:
+      return
+
+    # handle timing issues
     if self.prop_time is not None:
-      # handle propogation if neccessary
       dt = (ts - self.prop_time).to_sec()
       if dt < -0.1:
         rospy.logwarn('lidarlite message %f seconds old, skipping', -dt)
+        return
+      elif dt > 0.1:
+        rospy.logwarn('lidarlite message %f seconds in future, skipping', dt)
+        return
+      elif dt > 0:
+        (x, Sigma) = self.process(self.x, self.Sigma, self.u, dt, self.disturb_mode)
       else:
-        self.propogate_blind(ts)
+        (x, Sigma) = (self.x, self.Sigma)
 
     # Now do correction
     z = np.array([r])
 
-    (h,Hx,Q) = model.observation_alt_lidar(self.x, self.disturb_mode)
-    (x_c, Sigma_c) = self.update(self.x, self.Sigma, z, h, Hx, Q)
+    (h,Hx,Q) = model.observation_alt_lidar(x, self.disturb_mode)
+    (x_c, Sigma_c) = self.update(x, Sigma, z, h, Hx, Q)
+    (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+
+    return
+
+  def update_OptFlowRad(self, optflow):
+    ts = optflow.header.stamp
+    r = optflow.distance
+
+    print 'opt flow distance is ', r
+    # small measurements may be invalid
+    if r < 0.32:
+      return
+
+    # handle timing issues
+    if self.prop_time is not None:
+      dt = (ts - self.prop_time).to_sec()
+      if dt < -0.1:
+        rospy.logwarn('lidarlite message %f seconds old, skipping', -dt)
+        return
+      elif dt > 0.1:
+        rospy.logwarn('lidarlite message %f seconds in future, skipping', dt)
+        return
+      elif dt > 0:
+        (x, Sigma) = self.process(self.x, self.Sigma, self.u, dt, self.disturb_mode)
+      else:
+        (x, Sigma) = (self.x, self.Sigma)
+
+    # Now do correction
+    z = np.array([r])
+
+    (h,Hx,Q) = model.observation_alt_px4flow(x, self.disturb_mode, z)
+    (x_c, Sigma_c) = self.update(x, Sigma, z, h, Hx, Q)
     (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
 
     return

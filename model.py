@@ -153,11 +153,11 @@ def process_model_flight(x, u, dt, disturb_mode):
     dR[VAR_YAW, VAR_YAW]     = 0.20**2
     dR[VAR_VEL_U, VAR_VEL_U] = 0.20**2
     dR[VAR_VEL_V, VAR_VEL_V] = 0.20**2
-    dR[VAR_VEL_W, VAR_VEL_W] = 0.20**2
+    dR[VAR_VEL_W, VAR_VEL_W] = 0.50**2
     dR[VAR_SP_THRUST, VAR_SP_THRUST] = 1.5**2
     dR[VAR_POS_X, VAR_POS_X] = 0.25**2
     dR[VAR_POS_Y, VAR_POS_Y] = 0.25**2
-    dR[VAR_POS_Z, VAR_POS_Z] = 0.25**2
+    dR[VAR_POS_Z, VAR_POS_Z] = 0.40**2
     dR[VAR_DRAG_CO, VAR_DRAG_CO] = 1e-2**2
     dR[VAR_GBIAS_P, VAR_GBIAS_P] = 1e-5**2
     dR[VAR_GBIAS_Q, VAR_GBIAS_Q] = 1e-5**2
@@ -239,9 +239,9 @@ def process_model_grounded(x, u, dt, disturb_mode):
     M = np.diag([0.005**2, 0.005**2, 0.005**2]) * dt**2
     
     dR = np.zeros((VAR_COUNT, VAR_COUNT))
-    dR[VAR_ROLL, VAR_ROLL]   = 0.20**2
-    dR[VAR_PITCH, VAR_PITCH] = 0.20**2
-    dR[VAR_YAW, VAR_YAW]     = 0.20**2
+    dR[VAR_ROLL, VAR_ROLL]   = 0.25**2
+    dR[VAR_PITCH, VAR_PITCH] = 0.25**2
+    dR[VAR_YAW, VAR_YAW]     = 0.25**2
     dR[VAR_GBIAS_P, VAR_GBIAS_P] = 1e-5**2
     dR[VAR_GBIAS_Q, VAR_GBIAS_Q] = 1e-5**2
     dR[VAR_GBIAS_R, VAR_GBIAS_R] = 1e-5**2
@@ -335,6 +335,32 @@ def observation_alt_lidar(x, disturb_mode):
 
   return (h,Hx,Q)
 
+
+def observation_alt_px4flow(x, disturb_mode, z):
+  # Inputs:
+  #   x:    Vehicle state vector
+  #   disturb_mode:  Flag to use disturbance mode
+  #   z:    Measurement
+  # Outputs:
+  #   h:    Prediction of measurement given current state
+  #   Hx:   Jacobian of measurement wrt robot state
+  #   Q:    Measurement covariance matrix
+  pos_z = x[VAR_POS_Z]
+
+  # assume quad is near level, measuring distance to flat ground and offset by a few centimeters
+  h = np.array([ pos_z + 0.02 ])
+
+  Hx = np.zeros([1, VAR_COUNT])
+  Hx[0, VAR_POS_Z] = 1;
+
+  Q = np.diag([0.2**2]);
+
+  # measurement is sonar-based -- thus chance of ridiculous outlier measurements
+  if abs(h[0] - z) > 1.0:
+    Q = Q * 5    # scale covariance accordingly
+
+  return (h,Hx,Q)
+
 ################# Misc
 
 def accel_detect_bump(x, acc, threshold):
@@ -367,7 +393,7 @@ def accel_detect_takeoff(x, acc):
 
   acc_applied = acc + R.dot(grav_vect)
 
-  if acc_applied[2] > 0.7:
+  if acc_applied[2] > 0.8:
     return True
   else:
     return False
