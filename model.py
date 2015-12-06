@@ -45,6 +45,11 @@ init_Sigma = np.diag(init_Sigmas)
 
 init_u = np.zeros(3)
 
+# Flight states
+FLIGHT_STATE_GROUNDED   = 0   # before takeoff
+FLIGHT_STATE_TAKEOFF    = 1   # transition state
+FLIGHT_STATE_FLIGHT     = 2   # use full flight model
+
 # Disturbance modes
 DISTURB_NOMINAL = 0   # no disturbance detected
 DISTURB_ACTIVE  = 1   # disturbance detected, inflate process
@@ -173,7 +178,8 @@ def process_model_flight(x, u, dt, disturb_mode):
 
     return (f, Fx, Fu, M, R)
 
-def process_model_grounded(x, u, dt, disturb_mode):
+# simpified model simply propogates imu
+def process_model_int_imu(x, u, dt, disturb_mode):
 # Inputs:
 #       x:      Current vehicle state
 #       u:      Control signal (raw gyro rates)
@@ -280,7 +286,7 @@ def observation_zupt(x):
 
   return (h,Hx,Q)
 
-def observation_acc(x, disturb_mode):
+def observation_acc_flight(x, disturb_mode):
 # Inputs:
 #   x:    Vehicle state vector
 #   disturb_mode:  Flag to use disturbance mode
@@ -314,6 +320,32 @@ def observation_acc(x, disturb_mode):
     Q = np.diag([1.0**2, 1.0**2, 1.0**2])
 
   return (h,Hx,Q)
+
+def observation_acc_ground(x, disturb_mode):
+# Inputs:
+#   x:    Vehicle state vector
+#   disturb_mode:  Flag to use disturbance mode
+# Outputs:
+#   h:    Prediction of measurement given current state
+#   Hx:   Jacobian of measurement wrt robot state
+#   Q:    Measurement covariance matrix
+
+  R = i2bRotMatrix(x)
+
+  # assume we're sitting at static equilibrium on the ground
+  # thus accelerometer is only measuring -gravity
+  h = R.dot(-grav_vect)
+
+  Hx = np.zeros([3, VAR_COUNT])
+
+  Hx[0:3, VAR_ROLL]   = i2bRotMatrixJacobianRoll(x).dot(-grav_vect)
+  Hx[0:3, VAR_PITCH]  = i2bRotMatrixJacobianPitch(x).dot(-grav_vect)
+  Hx[0:3, VAR_YAW]    = i2bRotMatrixJacobianYaw(x).dot(-grav_vect)
+
+  Q = np.diag([0.75**2, 0.75**2, 0.75**2])
+  
+  return (h,Hx,Q)
+
 
 def observation_alt_lidar(x, disturb_mode):
   # Inputs:

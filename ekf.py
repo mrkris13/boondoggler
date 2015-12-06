@@ -46,7 +46,7 @@ class EKF:
 
   disturb_mode  = None
 
-  in_flight     = None  # if in flight regime
+  flight_state  = None
   takeoff_ts    = None
 
   def __init__(self): 
@@ -57,7 +57,7 @@ class EKF:
     self.u = model.init_u
 
     self.disturb_mode = model.DISTURB_NOMINAL
-    self.in_flight = False    # STRONG ASSUMPTION we start on the ground
+    self.flight_state = model.FLIGHT_STATE_GROUNDED   # STRONG ASSUMPTION we start on the ground
 
     self.pub_pose = rospy.Publisher('boondoggler/pose', PoseStamped, queue_size=1)
     self.pub_vel = rospy.Publisher('boondoggler/vel', TwistStamped, queue_size=1)
@@ -104,7 +104,7 @@ class EKF:
     gyro_u = np.array([imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z])
     acc = np.array([imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z])
 
-    if self.in_flight:
+    if self.flight_state == model.FLIGHT_STATE_FLIGHT:
       # check for bump/disturbance
       if model.accel_detect_bump(self.x, acc, 9.0):
         self.disturb_mode = model.DISTURB_ACTIVE
@@ -281,11 +281,11 @@ class EKF:
 
     n = mu.size
 
-    # propogate vehicle state
-    if self.in_flight:
+    # propogate vehicle state according to flight state
+    if self.flight_state == model.FLIGHT_STATE_FLIGHT:
     	(f, Fx, Fu, M, R) = model.process_model_flight(mu, u, dt, disturb_mode)
     else:
-    	(f, Fx, Fu, M, R) = model.process_model_grounded(mu, u, dt, disturb_mode)
+    	(f, Fx, Fu, M, R) = model.process_model_int_imu(mu, u, dt, disturb_mode)
 
     # calculate predicted covariance
     Sigma_p = Fx.dot(Sigma).dot(Fx.transpose()) + Fu.dot(M).dot(Fu.transpose()) + R
@@ -399,7 +399,7 @@ class EKF:
     status.header.seq       = self.seq
 
     status.disturb_mode     = self.disturb_mode
-    status.in_flight        = self.in_flight
+    status.flight_state     = self.flight_state
 
     status.sp_thrust        = self.x[model.VAR_SP_THRUST]
     status.drag_coefficient = self.x[model.VAR_DRAG_CO]
