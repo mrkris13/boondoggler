@@ -5,7 +5,7 @@
 std_msgs/Header header
 
 int32 disturb_mode
-int32 in_flight
+int32 flight_state
 
 geometry_msgs/Vector3 gyro_biases
 float64 sp_thrust
