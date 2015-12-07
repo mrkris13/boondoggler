@@ -13,6 +13,9 @@ function [ ] = plotStateEstimatesFromBag( filename, varargin )
 
 close all;
 
+% add path to custom message
+addpath('../matlab_gen/msggen');
+
 startOffset = 0;
 endOffset = -1;
 if nargin > 1
@@ -99,6 +102,33 @@ end
 clear first_pose_msgs;
 clear pose_msgs;
 clear t_series;
+
+% %% Now pull estimator state
+disp('Extracting estimator state data...');
+state_msgs = select(bag, 'Time', time_window, 'Topic', '/boondoggler/status' );
+t_series_state = timeseries(state_msgs, 'GyroBiases.X', 'GyroBiases.Y', 'GyroBiases.Z', 'DragCoefficient', 'SpThrust', 'FlightState', 'DisturbMode');
+status.ts = bsxfun(@minus, t_series_state.Time, bag.StartTime);
+status.gyro_biases = t_series_state.Data(:,1:3);
+status.drag_coeff = t_series_state.Data(:,4);
+status.sp_thrust = t_series_state.Data(:,5);
+status.flight_state = t_series_state.Data(:,6);
+status.disturb_mode = t_series_state.Data(:,7);
+
+%% Determine flight windows
+flight_start_ts = status.ts(find( diff(status.flight_state > 0) == 1 ) + 1);
+flight_end_ts = status.ts(find( diff(status.flight_state > 0) == -1 ));
+if numel(flight_end_ts) < numel(flight_start_ts)
+  flight_end_ts = [flight_end_ts; status.ts(end)];
+end
+flight_ts = [flight_start_ts, flight_end_ts];
+
+ground_start_ts = status.ts(find( diff(status.flight_state == 0) == 1 ) + 1);
+ground_end_ts = status.ts(find( diff(status.flight_state == 0) == -1 ));
+ground_start_ts = [status.ts(1); ground_start_ts];
+if numel(ground_end_ts) < numel(ground_start_ts)
+  ground_end_ts = [ground_end_ts; status.ts(end)];
+end
+ground_ts = [ground_start_ts, ground_end_ts];
 
 %% Plot data
 disp('Plotting');
@@ -210,6 +240,28 @@ figure(5);
 legend(names);
 figure(6);
 legend(names);
+
+%% Plot state variables
+figure;
+hold all;
+plot(status.ts, status.gyro_biases(:,1));
+plot(status.ts, status.gyro_biases(:,2));
+plot(status.ts, status.gyro_biases(:,3));
+title('Gyro Biases');
+xlabel('Time (s)');
+legend('X', 'Y', 'Z');
+
+figure;
+plot(status.ts, status.drag_coeff);
+title('Specific Drag Coefficient');
+xlabel('Time (s)');
+legend('Boondoggler');
+
+figure;
+plot(status.ts, status.sp_thrust);
+title('Specific Thrust');
+xlabel('Time (s)');
+legend('Boondoggler');
 
 end
 
