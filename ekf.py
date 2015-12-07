@@ -145,7 +145,7 @@ class EKF:
 
       else: # use grounded data
         # # if there is very little motion, we can zupt
-        if not model.accel_detect_bump(self.x, acc, 0.05):
+        if not model.accel_detect_bump(self.x, acc, 0.08):
           rospy.loginfo('zupting')
           (h, Hx, Q) = model.observation_zupt(self.x)
           (x_c, Sigma_c) = self.update(self.x, self.Sigma, gyro_u, h, Hx, Q)
