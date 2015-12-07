@@ -129,7 +129,7 @@ class EKF:
       self.propogate_from_imu(ts, gyro_u)
 
       # transition to flight mode after short period
-      if (ts - self.takeoff_ts).to_sec() > 0.1:
+      if (ts - self.takeoff_ts).to_sec() > 1.0:
         self.flight_state = model.FLIGHT_STATE_FLIGHT
         rospy.loginfo('Entering flight mode.')
 
@@ -145,22 +145,22 @@ class EKF:
 
       else: # use grounded data
         # # if there is very little motion, we can zupt
-        # if not model.accel_detect_bump(self.x, acc, 0.1):
-        #   rospy.loginfo('zupting')
-        #   (h, Hx, Q) = model.observation_zupt(self.x)
-        #   (x_c, Sigma_c) = self.update(self.x, self.Sigma, gyro_u, h, Hx, Q)
-        #   (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
-        #   self.prop_time = ts
+        if not model.accel_detect_bump(self.x, acc, 0.05):
+          rospy.loginfo('zupting')
+          (h, Hx, Q) = model.observation_zupt(self.x)
+          (x_c, Sigma_c) = self.update(self.x, self.Sigma, gyro_u, h, Hx, Q)
+          (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+          self.prop_time = ts
 
         # otherwise propogate grounded model
         # and use grounded accelerometer model
-        # else:
-        self.propogate_from_imu(ts, gyro_u)
-        
-        (h, Hx, Q) = model.observation_acc_ground(self.x, self.disturb_mode)
-        (x_c, Sigma_c) = self.update(self.x, self.Sigma, acc, h, Hx, Q)
-        (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
-        self.prop_time = ts
+        else:
+          self.propogate_from_imu(ts, gyro_u)
+          
+          (h, Hx, Q) = model.observation_acc_ground(self.x, self.disturb_mode)
+          (x_c, Sigma_c) = self.update(self.x, self.Sigma, acc, h, Hx, Q)
+          (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+          self.prop_time = ts
     return
 
   def update_Lidarlite(self, lidarlite):
@@ -201,6 +201,10 @@ class EKF:
     print 'opt flow distance is ', r
     # small measurements may be invalid
     if r < 0.32:
+      return
+
+    # sonar may give wonky measurements when uav isn't level
+    if not model.vehicle_is_level(self.x):
       return
 
     # handle timing issues

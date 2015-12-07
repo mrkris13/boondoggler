@@ -387,9 +387,9 @@ def observation_alt_px4flow(x, disturb_mode, z):
 
   Q = np.diag([0.2**2]);
 
-  # measurement is sonar-based -- thus chance of ridiculous outlier measurements
-  if abs(h[0] - z) > 1.0:
-    Q = Q * 5    # scale covariance accordingly
+  # # measurement is sonar-based -- thus chance of ridiculous outlier measurements
+  # if abs(h[0] - z) > 1.0:
+  #   Q = Q * 5    # scale covariance accordingly
 
   return (h,Hx,Q)
 
