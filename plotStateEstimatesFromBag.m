@@ -28,12 +28,12 @@ end
 %% Define data sources
 sources = cell(3,1);
 
-sources{1}.name = 'Boondoggler';
+sources{1}.name = 'Estimator';
 sources{1}.topic_pose = '/boondoggler/pose';
 sources{1}.topic_vel = '/boondoggler/vel';
 sources{1}.rotate_vel = false;
 
-sources{2}.name = 'Vicon -- Batman';
+sources{2}.name = 'Vicon';
 sources{2}.topic_pose = '/Batman/pose';
 sources{2}.topic_vel = '/Batman/vel';
 sources{2}.rotate_vel = true;
@@ -94,7 +94,8 @@ for s = 1:S
   if sources{s}.rotate_vel == true
     disp('rotating...')
     % assume we don't need to time-align quaternions to velocity data
-    sources{s}.vel = quatrotate(sources{s}.q, sources{s}.vel);
+    n = min(size(sources{s}.q,1), size(sources{s}.vel,1));
+    sources{s}.vel = quatrotate(sources{s}.q(1:n,:), sources{s}.vel(1:n,:));
   end
   
 end
@@ -129,6 +130,8 @@ if numel(ground_end_ts) < numel(ground_start_ts)
   ground_end_ts = [ground_end_ts; status.ts(end)];
 end
 ground_ts = [ground_start_ts, ground_end_ts];
+
+draw_flight_start = @(i) line([flight_start_ts(i),flight_start_ts(i)], [-100,100], 'Color', [0,0,0]);
 
 %% Plot data
 disp('Plotting');
@@ -199,10 +202,14 @@ for s = 1:S
   figure(4);
   subplot(2,1,1);
   hold all;
-  plot(sources{s}.ts, sources{s}.euler(:,1));
+  plot(sources{s}.ts, rad2deg(sources{s}.euler(:,1)));
+  axis manual;
+  draw_flight_start(1);
   subplot(2,1,2);
   hold all;
-  plot(sources{s}.ts, sources{s}.euler(:,2));
+  plot(sources{s}.ts, rad2deg(sources{s}.euler(:,2)));
+  axis manual;
+  draw_flight_start(1);
   
   figure(5);
   hold all;
@@ -212,12 +219,18 @@ for s = 1:S
   subplot(3,1,1);
   hold all;
   plot(sources{s}.vel_ts, sources{s}.vel(:,1));
+  axis manual;
+  draw_flight_start(1);
   subplot(3,1,2);
   hold all;
   plot(sources{s}.vel_ts, sources{s}.vel(:,2));
+  axis manual;
+  draw_flight_start(1);
   subplot(3,1,3);
   hold all;
   plot(sources{s}.vel_ts, sources{s}.vel(:,3));
+  axis manual;
+  draw_flight_start(1);
   
   
 end
@@ -229,6 +242,8 @@ for s = 1:S
   end
 end
 figure(1);
+axis manual;
+draw_flight_start(1);
 legend(names);
 figure(2);
 legend(names);
@@ -250,18 +265,22 @@ plot(status.ts, status.gyro_biases(:,3));
 title('Gyro Biases');
 xlabel('Time (s)');
 legend('X', 'Y', 'Z');
+axis manual;
+draw_flight_start(1);
 
 figure;
 plot(status.ts, status.drag_coeff);
 title('Specific Drag Coefficient');
 xlabel('Time (s)');
-legend('Boondoggler');
+axis manual;
+draw_flight_start(1);
 
 figure;
 plot(status.ts, status.sp_thrust);
 title('Specific Thrust');
 xlabel('Time (s)');
-legend('Boondoggler');
+axis manual;
+draw_flight_start(1);
 
 end
 
