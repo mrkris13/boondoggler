@@ -39,7 +39,7 @@ init_Sigmas[VAR_ROLL:VAR_YAW+1]     = 1e-2*np.ones(3)
 init_Sigmas[VAR_VEL_U:VAR_VEL_W+1]  = 1e-2*np.ones(3)
 init_Sigmas[VAR_SP_THRUST]          = 0.5
 init_Sigmas[VAR_POS_X:VAR_POS_Z+1]  = 1e-5*np.ones(3)  # we are pretty certain because we define initial position as origin
-init_Sigmas[VAR_GBIAS_P:VAR_GBIAS_R+1] = 0.5*np.ones(3)
+init_Sigmas[VAR_GBIAS_P:VAR_GBIAS_R+1] = 0.25*np.ones(3)
 init_Sigmas[VAR_DRAG_CO]            = 2.0
 init_Sigma = np.diag(init_Sigmas)
 
@@ -248,9 +248,18 @@ def process_model_int_imu(x, u, dt, disturb_mode):
     dR[VAR_ROLL, VAR_ROLL]   = 0.25**2
     dR[VAR_PITCH, VAR_PITCH] = 0.25**2
     dR[VAR_YAW, VAR_YAW]     = 0.25**2
+    dR[VAR_VEL_U, VAR_VEL_U] = 0.20**2
+    dR[VAR_VEL_V, VAR_VEL_V] = 0.20**2
+    dR[VAR_VEL_W, VAR_VEL_W] = 0.50**2
+    dR[VAR_SP_THRUST, VAR_SP_THRUST] = 1.5**2
+    dR[VAR_POS_X, VAR_POS_X] = 0.25**2
+    dR[VAR_POS_Y, VAR_POS_Y] = 0.25**2
+    dR[VAR_POS_Z, VAR_POS_Z] = 0.40**2
+    dR[VAR_DRAG_CO, VAR_DRAG_CO] = 1e-2**2
     dR[VAR_GBIAS_P, VAR_GBIAS_P] = 1e-5**2
     dR[VAR_GBIAS_Q, VAR_GBIAS_Q] = 1e-5**2
     dR[VAR_GBIAS_R, VAR_GBIAS_R] = 1e-5**2
+
 
     if disturb_mode == DISTURB_ACTIVE:
       # inflate noise matrices appropriately
@@ -282,7 +291,7 @@ def observation_zupt(x):
   Hx = np.zeros([3,VAR_COUNT])
   Hx[0:3, VAR_GBIAS_P:VAR_GBIAS_P+3] = np.eye(3)
 
-  Q = np.diag([0.01**2, 0.01**2, 0.01**2])
+  Q = np.diag([0.008**2, 0.008**2, 0.008**2])
 
   return (h,Hx,Q)
 
@@ -379,7 +388,7 @@ def observation_alt_px4flow(x, disturb_mode, z):
   #   Q:    Measurement covariance matrix
   pos_z = x[VAR_POS_Z]
 
-  # assume quad is near level, measuring distance to flat ground and offset by a few centimeters
+  # assume quad is near level, measuring distance to flat ground at altitude 0 and offset by a few centimeters
   h = np.array([ pos_z + 0.02 ])
 
   Hx = np.zeros([1, VAR_COUNT])
@@ -387,7 +396,7 @@ def observation_alt_px4flow(x, disturb_mode, z):
 
   Q = np.diag([0.2**2]);
 
-  # # measurement is sonar-based -- thus chance of ridiculous outlier measurements
+  # measurement is sonar-based -- thus chance of ridiculous outlier measurements
   # if abs(h[0] - z) > 1.0:
   #   Q = Q * 5    # scale covariance accordingly
 
@@ -408,10 +417,7 @@ def accel_detect_bump(x, acc, threshold):
   # strapdown accelerometer measures body accel - gravity
   body_accel = np.linalg.norm( acc + R.dot(grav_vect) )
 
-  if body_accel > threshold:
-    return True
-  else:
-    return False
+  return body_accel > threshold
 
 def accel_detect_takeoff(x, acc):
   # Inputs:
@@ -526,9 +532,8 @@ def i2bRotMatrixJacobianYaw(x):
 def gyroRateTF(x):
   roll = x[VAR_ROLL]
   pitch = x[VAR_PITCH]
-  yaw = x[VAR_YAW]
 
-  L = np.array([                                          \
+  L = np.array([                                        \
     [1, sin(roll)*tan(pitch), cos(roll)*tan(pitch)],    \
     [0, cos(roll), -sin(roll)],                         \
     [0, sin(roll)/cos(pitch), cos(roll)/cos(pitch)] ])
@@ -539,9 +544,8 @@ def gyroRateTF(x):
 def gyroRateTFJacobianRoll(x):
   roll = x[VAR_ROLL]
   pitch = x[VAR_PITCH]
-  yaw = x[VAR_YAW]
 
-  dL = np.array([                                          \
+  dL = np.array([                                        \
     [0, cos(roll)*tan(pitch), -sin(roll)*tan(pitch)],    \
     [0, -sin(roll), -cos(roll)],                         \
     [0, cos(roll)/cos(pitch), -sin(roll)/cos(pitch)] ])
@@ -551,9 +555,8 @@ def gyroRateTFJacobianRoll(x):
 def gyroRateTFJacobianPitch(x):
   roll = x[VAR_ROLL]
   pitch = x[VAR_PITCH]
-  yaw = x[VAR_YAW]
 
-  dL = np.array([                                                 \
+  dL = np.array([                                               \
     [0, sin(roll)/(cos(pitch)**2), cos(roll)/(cos(pitch)**2)],  \
     [0, 0, 0],                                                  \
     [0, sin(roll)*sin(pitch)/cos(pitch)**2, cos(roll)*sin(pitch)/cos(pitch)**2] ])
@@ -563,7 +566,6 @@ def gyroRateTFJacobianPitch(x):
 def gyroRateTFJacobianYaw(x):
   roll = x[VAR_ROLL]
   pitch = x[VAR_PITCH]
-  yaw = x[VAR_YAW]
 
   dL = np.zeros((3,3))
   return dL

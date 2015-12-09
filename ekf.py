@@ -106,7 +106,7 @@ class EKF:
 
     if self.flight_state == model.FLIGHT_STATE_FLIGHT:
       # check for bump/disturbance
-      if model.accel_detect_bump(self.x, acc, 9.0):
+      if model.accel_detect_bump(self.x, acc, 15.0):
         self.disturb_mode = model.DISTURB_ACTIVE
         self.bump_time = ts
         rospy.loginfo('Bump detected')
@@ -119,10 +119,26 @@ class EKF:
       # propogate if neccessary
       self.propogate_from_imu(ts, gyro_u) 
 
-      # And do correction based on accelerometer
+      # and do correction based on accelerometer
       (h, Hx, Q) = model.observation_acc_flight(self.x, self.disturb_mode)
       (x_c, Sigma_c) = self.update(self.x, self.Sigma, acc, h, Hx, Q)
       (self.x, self.Sigma) = model.enforce_bounds(x_c, Sigma_c)
+
+      # detect landing
+      if self.disturb_mode == model.DISTURB_NOMINAL and model.vehicle_is_level(self.x) and model.vehicle_is_stationary(self.x, gyro_u, acc):
+        if self.potential_landing_ts is None:
+          self.potential_landing_ts == ts
+          self.potential_landing_nonstationary_count = 0
+        
+        elif (ts - self.potential_landing_ts) > 0.25:
+          rospy.loginfo('Landing detected. Entering ground mode.')
+          self.potential_landing_ts = None
+          self.flight_state = model.FLIGHT_STATE_GROUNDED
+          
+      else:
+        # we aren't stationary, can't be landed
+        self.potential_landing_ts = None
+
 
     elif self.flight_state == model.FLIGHT_STATE_TAKEOFF:
       # just propogate imu
@@ -142,10 +158,11 @@ class EKF:
         # assume we start in disturbed state
         self.disturb_mode = model.DISTURB_ACTIVE
         self.bump_time = ts
+        print self.Sigma
 
       else: # use grounded data
-        # # if there is very little motion, we can zupt
-        if not model.accel_detect_bump(self.x, acc, 0.08):
+        # if there is very little motion, we can zupt
+        if not model.accel_detect_bump(self.x, acc, 0.10):
           rospy.loginfo('zupting')
           (h, Hx, Q) = model.observation_zupt(self.x)
           (x_c, Sigma_c) = self.update(self.x, self.Sigma, gyro_u, h, Hx, Q)
@@ -184,6 +201,8 @@ class EKF:
         (x, Sigma) = self.process(self.x, self.Sigma, self.u, dt, self.disturb_mode)
       else:
         (x, Sigma) = (self.x, self.Sigma)
+    else:
+      (x, Sigma) = (self.x, self.Sigma)
 
     # Now do correction
     z = np.array([r])
