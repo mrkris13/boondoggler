@@ -295,7 +295,7 @@ def observation_zupt(x):
 
   return (h,Hx,Q)
 
-def observation_acc_flight(x, disturb_mode):
+def observation_acc_flight(x, disturb_mode = DISTURB_NOMINAL):
 # Inputs:
 #   x:    Vehicle state vector
 #   disturb_mode:  Flag to use disturbance mode
