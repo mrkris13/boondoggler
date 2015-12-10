@@ -49,6 +49,8 @@ class EKF:
   flight_state  = None
   takeoff_ts    = None
 
+  potential_landing_ts 	= None
+
   def __init__(self): 
     rospy.loginfo('EKF: initializing EKF object...')
 
