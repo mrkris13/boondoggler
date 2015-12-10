@@ -431,21 +431,54 @@ def accel_detect_takeoff(x, acc):
 
   acc_applied = acc + R.dot(grav_vect)
 
-  if acc_applied[2] > 0.8:
+  if acc_applied[2] > 0.2:
     return True
   else:
     return False
 
 def vehicle_is_level(x):
   # Inputs:
-  #   x:                  State vector
+  #   x:          State vector
   # Outputs:
   #   is_level:   Boolean
 
   # level if roll and pitch both less than 5deg from 0
   return ( max(abs(x[VAR_ROLL]), abs(x[VAR_PITCH])) < 0.0872665 )
 
+def vehicle_is_stationary(x, gyro_u, acc):
+  # Inputs:
+  #   x:          State vector
+  # Outputs:
+  #   is_stationary:   Boolean
+
+  no_vel = np.linalg.norm( x[VAR_VEL_U:VAR_VEL_U+3] )               < 0.2
+  no_rot = np.linalg.norm( gyro_u - x[VAR_GBIAS_P:VAR_GBIAS_P+3] )  < 0.1
+  forces_nominal = not accel_detect_bump(x, acc, 0.5)
+  
+  return (no_vel and no_rot and forces_nominal)
+
 ################### Transform Utility functions
+
+def R_yaw(yaw):
+  return np.array([           \
+    [cos(yaw), sin(yaw), 0],  \
+    [-sin(yaw), cos(yaw), 0], \
+    [0, 0, 1]                 \
+    ])
+
+def R_pitch(pitch):
+  return np.array([               \
+    [cos(pitch), 0, -sin(pitch)], \
+    [0, 1, 0],                    \
+    [sin(pitch), 0, cos(pitch)]   \
+    ])
+
+def R_roll(roll):
+  return np.array([               \
+    [1, 0, 0],                    \
+    [0, cos(roll), sin(roll)],    \
+    [0, -sin(roll), cos(roll)]    \
+    ])
 
 # Defines inertial-to-body transform based on input Euler angles
 def i2bRotMatrix(x):
@@ -453,17 +486,7 @@ def i2bRotMatrix(x):
   pitch = x[VAR_PITCH]
   yaw = x[VAR_YAW]
 
-  R_yaw = np.array([[cos(yaw), sin(yaw), 0], \
-    [-sin(yaw), cos(yaw), 0], \
-    [0, 0, 1]])
-  R_pitch = np.array([[cos(pitch), 0, -sin(pitch)], \
-    [0, 1, 0], \
-    [sin(pitch), 0, cos(pitch)]])
-  R_roll = np.array([[1, 0, 0], \
-    [0, cos(roll), sin(roll)], \
-    [0, -sin(roll), cos(roll)]])
-
-  R_bi = R_roll.dot(R_pitch.dot(R_yaw))
+  R_bi = R_roll(roll).dot(R_pitch(pitch)).dot(R_yaw(yaw))
   return R_bi
 
 # Calculate rotation matrix partial derivitive with respect to roll
